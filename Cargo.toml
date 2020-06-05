@@ -3,6 +3,7 @@ name = "quircs"
 authors = ["dignifiedquire <me@dignifiedquire.com>"]
 version = "1.0.0"
 edition = "2018"
+license = "MIT"
 
 [lib]
 crate-type = ["staticlib", "rlib"]
