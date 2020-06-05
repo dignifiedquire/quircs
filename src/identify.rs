@@ -41,14 +41,8 @@ pub struct polygon_score_data {
     pub scores: [libc::c_int; 4],
     pub corners: *mut quirc_point,
 }
-pub type span_func_t = Option<
-    unsafe extern "C" fn(
-        _: *mut libc::c_void,
-        _: libc::c_int,
-        _: libc::c_int,
-        _: libc::c_int,
-    ) -> (),
->;
+pub type span_func_t =
+    Option<unsafe fn(_: *mut libc::c_void, _: libc::c_int, _: libc::c_int, _: libc::c_int) -> ()>;
 /* Limits on the maximum size of QR-codes and their content. */
 /* QR-code ECC types. */
 /* QR-code data types. */
@@ -81,7 +75,7 @@ pub struct quirc_code {
 /* ***********************************************************************
  * Linear algebra routines
  */
-unsafe extern "C" fn line_intersect(
+unsafe fn line_intersect(
     mut p0: *const quirc_point,
     mut p1: *const quirc_point,
     mut q0: *const quirc_point,
@@ -113,7 +107,7 @@ unsafe extern "C" fn line_intersect(
     (*r).y = (-c * e + a * f) / det;
     return 1i32;
 }
-unsafe extern "C" fn perspective_setup(
+unsafe fn perspective_setup(
     mut c: *mut libc::c_double,
     mut rect: *const quirc_point,
     mut w: libc::c_double,
@@ -150,7 +144,7 @@ unsafe extern "C" fn perspective_setup(
     *c.offset(7) =
         (-x2 * y3 + x1 * y3 + x3 * y2 + x0 * (y1 - y2) - x3 * y1 + (x2 - x1) * y0) / hden;
 }
-unsafe extern "C" fn perspective_map(
+unsafe fn perspective_map(
     mut c: *const libc::c_double,
     mut u: libc::c_double,
     mut v: libc::c_double,
@@ -162,7 +156,7 @@ unsafe extern "C" fn perspective_map(
     (*ret).x = rint(x) as libc::c_int;
     (*ret).y = rint(y) as libc::c_int;
 }
-unsafe extern "C" fn perspective_unmap(
+unsafe fn perspective_unmap(
     mut c: *const libc::c_double,
     mut in_0: *const quirc_point,
     mut u: *mut libc::c_double,
@@ -184,8 +178,8 @@ unsafe extern "C" fn perspective_unmap(
         + *c.offset(2) * *c.offset(3))
         / den;
 }
-unsafe extern "C" fn flood_fill_seed(
-    mut q: *mut quirc,
+unsafe fn flood_fill_seed(
+    mut q: *mut Quirc,
     mut x: libc::c_int,
     mut y: libc::c_int,
     mut from: libc::c_int,
@@ -241,7 +235,7 @@ unsafe extern "C" fn flood_fill_seed(
 /* ***********************************************************************
  * Adaptive thresholding
  */
-unsafe extern "C" fn otsu(mut q: *const quirc) -> uint8_t {
+unsafe fn otsu(mut q: *const Quirc) -> uint8_t {
     let mut numPixels: libc::c_int = (*q).w * (*q).h;
     // Calculate histogram
     let mut histogram: [libc::c_uint; 256] = [0; 256];
@@ -303,7 +297,7 @@ unsafe extern "C" fn otsu(mut q: *const quirc) -> uint8_t {
     }
     return threshold;
 }
-unsafe extern "C" fn area_count(
+unsafe fn area_count(
     mut user_data: *mut libc::c_void,
     mut y: libc::c_int,
     mut left: libc::c_int,
@@ -311,11 +305,7 @@ unsafe extern "C" fn area_count(
 ) {
     (*(user_data as *mut quirc_region)).count += right - left + 1i32;
 }
-unsafe extern "C" fn region_code(
-    mut q: *mut quirc,
-    mut x: libc::c_int,
-    mut y: libc::c_int,
-) -> libc::c_int {
+unsafe fn region_code(mut q: *mut Quirc, mut x: libc::c_int, mut y: libc::c_int) -> libc::c_int {
     let mut pixel: libc::c_int = 0;
     let mut box_0: *mut quirc_region = 0 as *mut quirc_region;
     let mut region: libc::c_int = 0;
@@ -352,7 +342,7 @@ unsafe extern "C" fn region_code(
         region,
         Some(
             area_count
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     _: *mut libc::c_void,
                     _: libc::c_int,
                     _: libc::c_int,
@@ -364,7 +354,7 @@ unsafe extern "C" fn region_code(
     );
     return region;
 }
-unsafe extern "C" fn find_one_corner(
+unsafe fn find_one_corner(
     mut user_data: *mut libc::c_void,
     mut y: libc::c_int,
     mut left: libc::c_int,
@@ -386,7 +376,7 @@ unsafe extern "C" fn find_one_corner(
         i += 1
     }
 }
-unsafe extern "C" fn find_other_corners(
+unsafe fn find_other_corners(
     mut user_data: *mut libc::c_void,
     mut y: libc::c_int,
     mut left: libc::c_int,
@@ -413,8 +403,8 @@ unsafe extern "C" fn find_other_corners(
         i += 1
     }
 }
-unsafe extern "C" fn find_region_corners(
-    mut q: *mut quirc,
+unsafe fn find_region_corners(
+    mut q: *mut Quirc,
     mut rcode: libc::c_int,
     mut ref_0: *const quirc_point,
     mut corners: *mut quirc_point,
@@ -447,7 +437,7 @@ unsafe extern "C" fn find_region_corners(
         1i32,
         Some(
             find_one_corner
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     _: *mut libc::c_void,
                     _: libc::c_int,
                     _: libc::c_int,
@@ -482,7 +472,7 @@ unsafe extern "C" fn find_region_corners(
         rcode,
         Some(
             find_other_corners
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     _: *mut libc::c_void,
                     _: libc::c_int,
                     _: libc::c_int,
@@ -493,11 +483,7 @@ unsafe extern "C" fn find_region_corners(
         0i32,
     );
 }
-unsafe extern "C" fn record_capstone(
-    mut q: *mut quirc,
-    mut ring: libc::c_int,
-    mut stone: libc::c_int,
-) {
+unsafe fn record_capstone(mut q: *mut Quirc, mut ring: libc::c_int, mut stone: libc::c_int) {
     let mut stone_reg: *mut quirc_region =
         &mut *(*q).regions.as_mut_ptr().offset(stone as isize) as *mut quirc_region;
     let mut ring_reg: *mut quirc_region =
@@ -542,8 +528,8 @@ unsafe extern "C" fn record_capstone(
         &mut (*capstone).center,
     );
 }
-unsafe extern "C" fn test_capstone(
-    mut q: *mut quirc,
+unsafe fn test_capstone(
+    mut q: *mut Quirc,
     mut x: libc::c_int,
     mut y: libc::c_int,
     mut pb: *mut libc::c_int,
@@ -583,7 +569,7 @@ unsafe extern "C" fn test_capstone(
     }
     record_capstone(q, ring_left, stone);
 }
-unsafe extern "C" fn finder_scan(mut q: *mut quirc, mut y: libc::c_int) {
+unsafe fn finder_scan(mut q: *mut Quirc, mut y: libc::c_int) {
     let mut row: *mut quirc_pixel_t = (*q).pixels.offset((y * (*q).w) as isize);
     let mut x: libc::c_int = 0;
     let mut last_color: libc::c_int = 0i32;
@@ -639,7 +625,7 @@ unsafe extern "C" fn finder_scan(mut q: *mut quirc, mut y: libc::c_int) {
         x += 1
     }
 }
-unsafe extern "C" fn find_alignment_pattern(mut q: *mut quirc, mut index: libc::c_int) {
+unsafe fn find_alignment_pattern(mut q: *mut Quirc, mut index: libc::c_int) {
     let mut qr: *mut quirc_grid =
         &mut *(*q).grids.as_mut_ptr().offset(index as isize) as *mut quirc_grid;
     let mut c0: *mut quirc_capstone = &mut *(*q)
@@ -703,7 +689,7 @@ unsafe extern "C" fn find_alignment_pattern(mut q: *mut quirc, mut index: libc::
         }
     }
 }
-unsafe extern "C" fn find_leftmost_to_line(
+unsafe fn find_leftmost_to_line(
     mut user_data: *mut libc::c_void,
     mut y: libc::c_int,
     mut left: libc::c_int,
@@ -726,8 +712,8 @@ unsafe extern "C" fn find_leftmost_to_line(
 /* Do a Bresenham scan from one point to another and count the number
  * of black/white transitions.
  */
-unsafe extern "C" fn timing_scan(
-    mut q: *const quirc,
+unsafe fn timing_scan(
+    mut q: *const Quirc,
     mut p0: *const quirc_point,
     mut p1: *const quirc_point,
 ) -> libc::c_int {
@@ -807,10 +793,7 @@ unsafe extern "C" fn timing_scan(
  * which is nearest the centre of the code. Using these points, we do
  * a horizontal and a vertical timing scan.
  */
-unsafe extern "C" fn measure_timing_pattern(
-    mut q: *mut quirc,
-    mut index: libc::c_int,
-) -> libc::c_int {
+unsafe fn measure_timing_pattern(mut q: *mut Quirc, mut index: libc::c_int) -> libc::c_int {
     let mut qr: *mut quirc_grid =
         &mut *(*q).grids.as_mut_ptr().offset(index as isize) as *mut quirc_grid;
     let mut i: libc::c_int = 0;
@@ -862,8 +845,8 @@ unsafe extern "C" fn measure_timing_pattern(
  * transform. Returns +/- 1 for black/white, 0 for cells which are
  * out of image bounds.
  */
-unsafe extern "C" fn read_cell(
-    mut q: *const quirc,
+unsafe fn read_cell(
+    mut q: *const Quirc,
     mut index: libc::c_int,
     mut x: libc::c_int,
     mut y: libc::c_int,
@@ -886,8 +869,8 @@ unsafe extern "C" fn read_cell(
         -1i32
     };
 }
-unsafe extern "C" fn fitness_cell(
-    mut q: *const quirc,
+unsafe fn fitness_cell(
+    mut q: *const Quirc,
     mut index: libc::c_int,
     mut x: libc::c_int,
     mut y: libc::c_int,
@@ -922,8 +905,8 @@ unsafe extern "C" fn fitness_cell(
     }
     return score;
 }
-unsafe extern "C" fn fitness_ring(
-    mut q: *const quirc,
+unsafe fn fitness_ring(
+    mut q: *const Quirc,
     mut index: libc::c_int,
     mut cx: libc::c_int,
     mut cy: libc::c_int,
@@ -941,8 +924,8 @@ unsafe extern "C" fn fitness_ring(
     }
     return score;
 }
-unsafe extern "C" fn fitness_apat(
-    mut q: *const quirc,
+unsafe fn fitness_apat(
+    mut q: *const Quirc,
     mut index: libc::c_int,
     mut cx: libc::c_int,
     mut cy: libc::c_int,
@@ -950,8 +933,8 @@ unsafe extern "C" fn fitness_apat(
     return fitness_cell(q, index, cx, cy) - fitness_ring(q, index, cx, cy, 1i32)
         + fitness_ring(q, index, cx, cy, 2i32);
 }
-unsafe extern "C" fn fitness_capstone(
-    mut q: *const quirc,
+unsafe fn fitness_capstone(
+    mut q: *const Quirc,
     mut index: libc::c_int,
     mut x: libc::c_int,
     mut y: libc::c_int,
@@ -966,7 +949,7 @@ unsafe extern "C" fn fitness_capstone(
  * transform, using the features we expect to find by scanning the
  * grid.
  */
-unsafe extern "C" fn fitness_all(mut q: *const quirc, mut index: libc::c_int) -> libc::c_int {
+unsafe fn fitness_all(mut q: *const Quirc, mut index: libc::c_int) -> libc::c_int {
     let mut qr: *const quirc_grid =
         &*(*q).grids.as_ptr().offset(index as isize) as *const quirc_grid;
     let mut version: libc::c_int = ((*qr).grid_size - 17i32) / 4i32;
@@ -1013,7 +996,7 @@ unsafe extern "C" fn fitness_all(mut q: *const quirc, mut index: libc::c_int) ->
     }
     return score;
 }
-unsafe extern "C" fn jiggle_perspective(mut q: *mut quirc, mut index: libc::c_int) {
+unsafe fn jiggle_perspective(mut q: *mut Quirc, mut index: libc::c_int) {
     let mut qr: *mut quirc_grid =
         &mut *(*q).grids.as_mut_ptr().offset(index as isize) as *mut quirc_grid;
     let mut best: libc::c_int = fitness_all(q, index);
@@ -1060,7 +1043,7 @@ unsafe extern "C" fn jiggle_perspective(mut q: *mut quirc, mut index: libc::c_in
  * chosen, we call this function to set up a grid-reading perspective
  * transform.
  */
-unsafe extern "C" fn setup_qr_perspective(mut q: *mut quirc, mut index: libc::c_int) {
+unsafe fn setup_qr_perspective(mut q: *mut Quirc, mut index: libc::c_int) {
     let mut qr: *mut quirc_grid =
         &mut *(*q).grids.as_mut_ptr().offset(index as isize) as *mut quirc_grid;
     let mut rect: [quirc_point; 4] = [quirc_point { x: 0, y: 0 }; 4];
@@ -1114,7 +1097,7 @@ unsafe extern "C" fn setup_qr_perspective(mut q: *mut quirc, mut index: libc::c_
 /* Rotate the capstone with so that corner 0 is the leftmost with respect
  * to the given reference line.
  */
-unsafe extern "C" fn rotate_capstone(
+unsafe fn rotate_capstone(
     mut cap: *mut quirc_capstone,
     mut h0: *const quirc_point,
     mut hd: *const quirc_point,
@@ -1160,8 +1143,8 @@ unsafe extern "C" fn rotate_capstone(
         7.0f64,
     );
 }
-unsafe extern "C" fn record_qr_grid(
-    mut q: *mut quirc,
+unsafe fn record_qr_grid(
+    mut q: *mut Quirc,
     mut a: libc::c_int,
     mut b: libc::c_int,
     mut c: libc::c_int,
@@ -1300,7 +1283,7 @@ unsafe extern "C" fn record_qr_grid(
                         (*qr).align_region,
                         Some(
                             find_leftmost_to_line
-                                as unsafe extern "C" fn(
+                                as unsafe fn(
                                     _: *mut libc::c_void,
                                     _: libc::c_int,
                                     _: libc::c_int,
@@ -1326,8 +1309,8 @@ unsafe extern "C" fn record_qr_grid(
     }
     (*q).num_grids -= 1;
 }
-unsafe extern "C" fn test_neighbours(
-    mut q: *mut quirc,
+unsafe fn test_neighbours(
+    mut q: *mut Quirc,
     mut i: libc::c_int,
     mut hlist: *const neighbour_list,
     mut vlist: *const neighbour_list,
@@ -1363,7 +1346,7 @@ unsafe extern "C" fn test_neighbours(
     }
     record_qr_grid(q, best_h, i, best_v);
 }
-unsafe extern "C" fn test_grouping(mut q: *mut quirc, mut i: libc::c_int) {
+unsafe fn test_grouping(mut q: *mut Quirc, mut i: libc::c_int) {
     let mut c1: *mut quirc_capstone =
         &mut *(*q).capstones.as_mut_ptr().offset(i as isize) as *mut quirc_capstone;
     let mut j: libc::c_int = 0;
@@ -1423,7 +1406,7 @@ unsafe extern "C" fn test_grouping(mut q: *mut quirc, mut i: libc::c_int) {
     }
     test_neighbours(q, i, &mut hlist, &mut vlist);
 }
-unsafe extern "C" fn pixels_setup(mut q: *mut quirc, mut threshold: uint8_t) {
+unsafe fn pixels_setup(mut q: *mut Quirc, mut threshold: uint8_t) {
     let mut source: *mut uint8_t = (*q).image;
     let mut dest: *mut quirc_pixel_t = (*q).pixels;
     let mut length: libc::c_int = (*q).w * (*q).h;
@@ -1446,8 +1429,8 @@ unsafe extern "C" fn pixels_setup(mut q: *mut quirc, mut threshold: uint8_t) {
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn quirc_begin(
-    mut q: *mut quirc,
+pub unsafe fn quirc_begin(
+    mut q: *mut Quirc,
     mut w: *mut libc::c_int,
     mut h: *mut libc::c_int,
 ) -> *mut uint8_t {
@@ -1463,7 +1446,7 @@ pub unsafe extern "C" fn quirc_begin(
     return (*q).image;
 }
 #[no_mangle]
-pub unsafe extern "C" fn quirc_end(mut q: *mut quirc) {
+pub unsafe fn quirc_end(mut q: *mut Quirc) {
     let mut i: libc::c_int = 0;
     let mut threshold: uint8_t = otsu(q);
     pixels_setup(q, threshold);
@@ -1480,8 +1463,8 @@ pub unsafe extern "C" fn quirc_end(mut q: *mut quirc) {
 }
 /* Extract the QR-code specified by the given index. */
 #[no_mangle]
-pub unsafe extern "C" fn quirc_extract(
-    mut q: *const quirc,
+pub unsafe fn quirc_extract(
+    mut q: *const Quirc,
     mut index: libc::c_int,
     mut code: *mut quirc_code,
 ) {

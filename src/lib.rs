@@ -8,10 +8,12 @@
 #![feature(const_raw_ptr_to_usize_cast)]
 #![feature(extern_types)]
 
-pub mod decode;
-pub mod identify;
-pub mod quirc;
-pub mod version_db;
+mod decode;
+mod identify;
+mod quirc;
+mod version_db;
 
+pub use self::decode::*;
 pub use self::identify::*;
 pub use self::quirc::*;
+pub use self::version_db::*;

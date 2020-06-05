@@ -15,24 +15,10 @@ pub type __darwin_size_t = libc::c_ulong;
 pub type size_t = __darwin_size_t;
 pub type uint8_t = libc::c_uchar;
 pub type uint16_t = libc::c_ushort;
-/* quirc -- QR-code recognition library
- * Copyright (C) 2010-2012 Daniel Beer <dlbeer@gmail.com>
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- */
+
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct quirc {
+pub struct Quirc {
     pub image: *mut uint8_t,
     pub pixels: *mut quirc_pixel_t,
     pub w: libc::c_int,
@@ -114,24 +100,24 @@ pub const QUIRC_ERROR_INVALID_GRID_SIZE: quirc_decode_error_t = 1;
 pub const QUIRC_SUCCESS: quirc_decode_error_t = 0;
 
 #[no_mangle]
-pub unsafe extern "C" fn quirc_version() -> *const libc::c_char {
+pub unsafe fn quirc_version() -> *const libc::c_char {
     return b"1.0\x00" as *const u8 as *const libc::c_char;
 }
 #[no_mangle]
-pub unsafe extern "C" fn quirc_new() -> *mut quirc {
-    let mut q: *mut quirc = malloc(::std::mem::size_of::<quirc>() as libc::c_ulong) as *mut quirc;
+pub unsafe fn quirc_new() -> *mut Quirc {
+    let mut q: *mut Quirc = malloc(::std::mem::size_of::<Quirc>() as libc::c_ulong) as *mut Quirc;
     if q.is_null() {
-        return 0 as *mut quirc;
+        return 0 as *mut Quirc;
     }
     memset(
         q as *mut libc::c_void,
         0i32,
-        ::std::mem::size_of::<quirc>() as libc::c_ulong,
+        ::std::mem::size_of::<Quirc>() as libc::c_ulong,
     );
     return q;
 }
 #[no_mangle]
-pub unsafe extern "C" fn quirc_destroy(mut q: *mut quirc) {
+pub unsafe fn quirc_destroy(mut q: *mut Quirc) {
     free((*q).image as *mut libc::c_void);
     /* q->pixels may alias q->image when their type representation is of the
     same size, so we need to be careful here to avoid a double free */
@@ -141,8 +127,8 @@ pub unsafe extern "C" fn quirc_destroy(mut q: *mut quirc) {
     free(q as *mut libc::c_void);
 }
 #[no_mangle]
-pub unsafe extern "C" fn quirc_resize(
-    mut q: *mut quirc,
+pub unsafe fn quirc_resize(
+    mut q: *mut Quirc,
     mut w: libc::c_int,
     mut h: libc::c_int,
 ) -> libc::c_int {
@@ -247,7 +233,7 @@ pub unsafe extern "C" fn quirc_resize(
  * image.
  */
 #[no_mangle]
-pub unsafe extern "C" fn quirc_count(mut q: *const quirc) -> libc::c_int {
+pub unsafe fn quirc_count(mut q: *const Quirc) -> libc::c_int {
     return (*q).num_grids;
 }
 static mut error_table: [*const libc::c_char; 8] = [
@@ -261,7 +247,7 @@ static mut error_table: [*const libc::c_char; 8] = [
     b"Data underflow\x00" as *const u8 as *const libc::c_char,
 ];
 #[no_mangle]
-pub unsafe extern "C" fn quirc_strerror(mut err: quirc_decode_error_t) -> *const libc::c_char {
+pub unsafe fn quirc_strerror(mut err: quirc_decode_error_t) -> *const libc::c_char {
     if err as libc::c_uint >= 0i32 as libc::c_uint
         && (err as libc::c_ulong)
             < (::std::mem::size_of::<[*const libc::c_char; 8]>() as libc::c_ulong)

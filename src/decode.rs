@@ -1,6 +1,6 @@
 use libc;
 
-use crate::quirc::*;
+use crate::identify::*;
 use crate::version_db::*;
 
 extern "C" {
@@ -23,20 +23,7 @@ pub const QUIRC_ERROR_FORMAT_ECC: quirc_decode_error_t = 3;
 pub const QUIRC_ERROR_INVALID_VERSION: quirc_decode_error_t = 2;
 pub const QUIRC_ERROR_INVALID_GRID_SIZE: quirc_decode_error_t = 1;
 pub const QUIRC_SUCCESS: quirc_decode_error_t = 0;
-/* Limits on the maximum size of QR-codes and their content. */
-/* QR-code ECC types. */
-/* QR-code data types. */
-/* Common character encodings */
-/* This structure is used to return information about detected QR codes
- * in the input image.
- */
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct quirc_code {
-    pub corners: [quirc_point; 4],
-    pub size: libc::c_int,
-    pub cell_bitmap: [uint8_t; 3917],
-}
+
 /* This structure holds the decoded QR-code data */
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -646,7 +633,7 @@ static mut gf256: galois_field = unsafe {
 /* ***********************************************************************
  * Polynomial operations
  */
-unsafe extern "C" fn poly_add(
+unsafe fn poly_add(
     mut dst: *mut uint8_t,
     mut src: *const uint8_t,
     mut c: uint8_t,
@@ -674,11 +661,7 @@ unsafe extern "C" fn poly_add(
         i += 1
     }
 }
-unsafe extern "C" fn poly_eval(
-    mut s: *const uint8_t,
-    mut x: uint8_t,
-    mut gf: *const galois_field,
-) -> uint8_t {
+unsafe fn poly_eval(mut s: *const uint8_t, mut x: uint8_t, mut gf: *const galois_field) -> uint8_t {
     let mut i: libc::c_int = 0;
     let mut sum: uint8_t = 0i32 as uint8_t;
     let mut log_x: uint8_t = *(*gf).log.offset(x as isize);
@@ -702,7 +685,7 @@ unsafe extern "C" fn poly_eval(
 /* ***********************************************************************
  * Berlekamp-Massey algorithm for finding error locator polynomials.
  */
-unsafe extern "C" fn berlekamp_massey(
+unsafe fn berlekamp_massey(
     mut s: *const uint8_t,
     mut N: libc::c_int,
     mut gf: *const galois_field,
@@ -785,7 +768,7 @@ unsafe extern "C" fn berlekamp_massey(
  *
  * Generator polynomial for GF(2^8) is x^8 + x^4 + x^3 + x^2 + 1
  */
-unsafe extern "C" fn block_syndromes(
+unsafe fn block_syndromes(
     mut data: *const uint8_t,
     mut bs: libc::c_int,
     mut npar: libc::c_int,
@@ -815,7 +798,7 @@ unsafe extern "C" fn block_syndromes(
     }
     return nonzero;
 }
-unsafe extern "C" fn eloc_poly(
+unsafe fn eloc_poly(
     mut omega: *mut uint8_t,
     mut s: *const uint8_t,
     mut sigma: *const uint8_t,
@@ -848,7 +831,7 @@ unsafe extern "C" fn eloc_poly(
         i += 1
     }
 }
-unsafe extern "C" fn correct_block(
+unsafe fn correct_block(
     mut data: *mut uint8_t,
     mut ecc: *const quirc_rs_params,
 ) -> quirc_decode_error_t {
@@ -901,7 +884,7 @@ unsafe extern "C" fn correct_block(
     }
     return QUIRC_SUCCESS;
 }
-unsafe extern "C" fn format_syndromes(mut u: uint16_t, mut s: *mut uint8_t) -> libc::c_int {
+unsafe fn format_syndromes(mut u: uint16_t, mut s: *mut uint8_t) -> libc::c_int {
     let mut i: libc::c_int = 0;
     let mut nonzero: libc::c_int = 0i32;
     memset(s as *mut libc::c_void, 0i32, 64i32 as libc::c_ulong);
@@ -926,7 +909,7 @@ unsafe extern "C" fn format_syndromes(mut u: uint16_t, mut s: *mut uint8_t) -> l
     }
     return nonzero;
 }
-unsafe extern "C" fn correct_format(mut f_ret: *mut uint16_t) -> quirc_decode_error_t {
+unsafe fn correct_format(mut f_ret: *mut uint16_t) -> quirc_decode_error_t {
     let mut u: uint16_t = *f_ret;
     let mut i: libc::c_int = 0;
     let mut s: [uint8_t; 64] = [0; 64];
@@ -953,7 +936,7 @@ unsafe extern "C" fn correct_format(mut f_ret: *mut uint16_t) -> quirc_decode_er
     return QUIRC_SUCCESS;
 }
 #[inline]
-unsafe extern "C" fn grid_bit(
+unsafe fn grid_bit(
     mut code: *const quirc_code,
     mut x: libc::c_int,
     mut y: libc::c_int,
@@ -961,7 +944,7 @@ unsafe extern "C" fn grid_bit(
     let mut p: libc::c_int = y * (*code).size + x;
     return (*code).cell_bitmap[(p >> 3i32) as usize] as libc::c_int >> (p & 7i32) & 1i32;
 }
-unsafe extern "C" fn read_format(
+unsafe fn read_format(
     mut code: *const quirc_code,
     mut data: *mut quirc_data,
     mut which: libc::c_int,
@@ -1009,11 +992,7 @@ unsafe extern "C" fn read_format(
     (*data).mask = fdata as libc::c_int & 7i32;
     return QUIRC_SUCCESS;
 }
-unsafe extern "C" fn mask_bit(
-    mut mask: libc::c_int,
-    mut i: libc::c_int,
-    mut j: libc::c_int,
-) -> libc::c_int {
+unsafe fn mask_bit(mut mask: libc::c_int, mut i: libc::c_int, mut j: libc::c_int) -> libc::c_int {
     match mask {
         0 => return ((i + j) % 2i32 == 0) as libc::c_int,
         1 => return (i % 2i32 == 0) as libc::c_int,
@@ -1027,7 +1006,7 @@ unsafe extern "C" fn mask_bit(
     }
     return 0i32;
 }
-unsafe extern "C" fn reserved_cell(
+unsafe fn reserved_cell(
     mut version: libc::c_int,
     mut i: libc::c_int,
     mut j: libc::c_int,
@@ -1092,7 +1071,7 @@ unsafe extern "C" fn reserved_cell(
     }
     return 0i32;
 }
-unsafe extern "C" fn read_bit(
+unsafe fn read_bit(
     mut code: *const quirc_code,
     mut data: *mut quirc_data,
     mut ds: *mut datastream,
@@ -1111,7 +1090,7 @@ unsafe extern "C" fn read_bit(
     }
     (*ds).data_bits += 1;
 }
-unsafe extern "C" fn read_data(
+unsafe fn read_data(
     mut code: *const quirc_code,
     mut data: *mut quirc_data,
     mut ds: *mut datastream,
@@ -1137,7 +1116,7 @@ unsafe extern "C" fn read_data(
         }
     }
 }
-unsafe extern "C" fn codestream_ecc(
+unsafe fn codestream_ecc(
     mut data: *mut quirc_data,
     mut ds: *mut datastream,
 ) -> quirc_decode_error_t {
@@ -1195,10 +1174,10 @@ unsafe extern "C" fn codestream_ecc(
     return QUIRC_SUCCESS;
 }
 #[inline]
-unsafe extern "C" fn bits_remaining(mut ds: *const datastream) -> libc::c_int {
+unsafe fn bits_remaining(mut ds: *const datastream) -> libc::c_int {
     return (*ds).data_bits - (*ds).ptr;
 }
-unsafe extern "C" fn take_bits(mut ds: *mut datastream, mut len: libc::c_int) -> libc::c_int {
+unsafe fn take_bits(mut ds: *mut datastream, mut len: libc::c_int) -> libc::c_int {
     let mut ret: libc::c_int = 0i32;
     while len != 0 && (*ds).ptr < (*ds).data_bits {
         let mut b: uint8_t = (*ds).data[((*ds).ptr >> 3i32) as usize];
@@ -1212,7 +1191,7 @@ unsafe extern "C" fn take_bits(mut ds: *mut datastream, mut len: libc::c_int) ->
     }
     return ret;
 }
-unsafe extern "C" fn numeric_tuple(
+unsafe fn numeric_tuple(
     mut data: *mut quirc_data,
     mut ds: *mut datastream,
     mut bits: libc::c_int,
@@ -1234,7 +1213,7 @@ unsafe extern "C" fn numeric_tuple(
     (*data).payload_len += digits;
     return 0i32;
 }
-unsafe extern "C" fn decode_numeric(
+unsafe fn decode_numeric(
     mut data: *mut quirc_data,
     mut ds: *mut datastream,
 ) -> quirc_decode_error_t {
@@ -1269,7 +1248,7 @@ unsafe extern "C" fn decode_numeric(
     }
     return QUIRC_SUCCESS;
 }
-unsafe extern "C" fn alpha_tuple(
+unsafe fn alpha_tuple(
     mut data: *mut quirc_data,
     mut ds: *mut datastream,
     mut bits: libc::c_int,
@@ -1294,10 +1273,7 @@ unsafe extern "C" fn alpha_tuple(
     (*data).payload_len += digits;
     return 0i32;
 }
-unsafe extern "C" fn decode_alpha(
-    mut data: *mut quirc_data,
-    mut ds: *mut datastream,
-) -> quirc_decode_error_t {
+unsafe fn decode_alpha(mut data: *mut quirc_data, mut ds: *mut datastream) -> quirc_decode_error_t {
     let mut bits: libc::c_int = 13i32;
     let mut count: libc::c_int = 0;
     if (*data).version < 10i32 {
@@ -1323,10 +1299,7 @@ unsafe extern "C" fn decode_alpha(
     }
     return QUIRC_SUCCESS;
 }
-unsafe extern "C" fn decode_byte(
-    mut data: *mut quirc_data,
-    mut ds: *mut datastream,
-) -> quirc_decode_error_t {
+unsafe fn decode_byte(mut data: *mut quirc_data, mut ds: *mut datastream) -> quirc_decode_error_t {
     let mut bits: libc::c_int = 16i32;
     let mut count: libc::c_int = 0;
     let mut i: libc::c_int = 0;
@@ -1349,10 +1322,7 @@ unsafe extern "C" fn decode_byte(
     }
     return QUIRC_SUCCESS;
 }
-unsafe extern "C" fn decode_kanji(
-    mut data: *mut quirc_data,
-    mut ds: *mut datastream,
-) -> quirc_decode_error_t {
+unsafe fn decode_kanji(mut data: *mut quirc_data, mut ds: *mut datastream) -> quirc_decode_error_t {
     let mut bits: libc::c_int = 12i32;
     let mut count: libc::c_int = 0;
     let mut i: libc::c_int = 0;
@@ -1392,10 +1362,7 @@ unsafe extern "C" fn decode_kanji(
     }
     return QUIRC_SUCCESS;
 }
-unsafe extern "C" fn decode_eci(
-    mut data: *mut quirc_data,
-    mut ds: *mut datastream,
-) -> quirc_decode_error_t {
+unsafe fn decode_eci(mut data: *mut quirc_data, mut ds: *mut datastream) -> quirc_decode_error_t {
     if bits_remaining(ds) < 8i32 {
         return QUIRC_ERROR_DATA_UNDERFLOW;
     }
@@ -1413,7 +1380,7 @@ unsafe extern "C" fn decode_eci(
     }
     return QUIRC_SUCCESS;
 }
-unsafe extern "C" fn decode_payload(
+unsafe fn decode_payload(
     mut data: *mut quirc_data,
     mut ds: *mut datastream,
 ) -> quirc_decode_error_t {
@@ -1448,7 +1415,7 @@ unsafe extern "C" fn decode_payload(
 }
 /* Decode a QR-code, returning the payload data. */
 #[no_mangle]
-pub unsafe extern "C" fn quirc_decode(
+pub unsafe fn quirc_decode(
     mut code: *const quirc_code,
     mut data: *mut quirc_data,
 ) -> quirc_decode_error_t {

@@ -13,21 +13,7 @@ use quircs::*;
 extern "C" {
     pub type __sFILEX;
     pub type _telldir;
-    /* quirc -- QR-code recognition library
-     * Copyright (C) 2010-2012 Daniel Beer <dlbeer@gmail.com>
-     *
-     * Permission to use, copy, modify, and/or distribute this software for any
-     * purpose with or without fee is hereby granted, provided that the above
-     * copyright notice and this permission notice appear in all copies.
-     *
-     * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-     * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-     * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-     * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-     * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-     * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-     * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-     */
+
     #[no_mangle]
     static mut __stderrp: *mut FILE;
     #[no_mangle]
@@ -222,8 +208,9 @@ pub struct result_info {
 
 static mut want_verbose: libc::c_int = 0i32;
 static mut want_cell_dump: libc::c_int = 0i32;
-static mut decoder: *mut quirc = 0 as *const quirc as *mut quirc;
-unsafe extern "C" fn print_result(mut name: *const libc::c_char, mut info: *mut result_info) {
+static mut decoder: *mut Quirc = 0 as *const Quirc as *mut Quirc;
+
+unsafe fn print_result(mut name: *const libc::c_char, mut info: *mut result_info) {
     puts(
         b"-------------------------------------------------------------------------------\x00"
             as *const u8 as *const libc::c_char,
@@ -265,7 +252,7 @@ unsafe extern "C" fn print_result(mut name: *const libc::c_char, mut info: *mut 
         );
     };
 }
-unsafe extern "C" fn add_result(mut sum: *mut result_info, mut inf: *mut result_info) {
+unsafe fn add_result(mut sum: *mut result_info, mut inf: *mut result_info) {
     (*sum).file_count += (*inf).file_count;
     (*sum).id_count += (*inf).id_count;
     (*sum).decode_count += (*inf).decode_count;
@@ -273,14 +260,20 @@ unsafe extern "C" fn add_result(mut sum: *mut result_info, mut inf: *mut result_
     (*sum).identify_time = (*sum).identify_time.wrapping_add((*inf).identify_time);
     (*sum).total_time = (*sum).total_time.wrapping_add((*inf).total_time);
 }
-unsafe extern "C" fn scan_file(
+
+unsafe fn load_jpeg(dec: *mut Quirc, path: *const libc::c_char) -> libc::c_int {
+    todo!()
+}
+
+unsafe fn load_png(dec: *mut Quirc, path: *const libc::c_char) -> libc::c_int {
+    todo!()
+}
+
+unsafe fn scan_file(
     mut path: *const libc::c_char,
     mut filename: *const libc::c_char,
     mut info: *mut result_info,
 ) -> libc::c_int {
-    let mut loader: Option<
-        unsafe extern "C" fn(_: &mut quirc, _: *const libc::c_char) -> libc::c_int,
-    > = None;
     let mut len: libc::c_int = strlen(filename) as libc::c_int;
     let mut ext: *const libc::c_char = 0 as *const libc::c_char;
     let mut tp: timespec = timespec {
@@ -295,24 +288,20 @@ unsafe extern "C" fn scan_file(
         len -= 1
     }
     ext = filename.offset(len as isize).offset(1);
-    if strcasecmp(ext, b"jpg\x00" as *const u8 as *const libc::c_char) == 0i32
-        || strcasecmp(ext, b"jpeg\x00" as *const u8 as *const libc::c_char) == 0i32
-    {
-        loader = Some(
-            load_jpeg as unsafe extern "C" fn(_: &mut quirc, _: *const libc::c_char) -> libc::c_int,
-        )
-    } else if strcasecmp(ext, b"png\x00" as *const u8 as *const libc::c_char) == 0i32 {
-        loader = Some(
-            load_png as unsafe extern "C" fn(_: &mut quirc, _: *const libc::c_char) -> libc::c_int,
-        )
-    } else {
-        return 0i32;
-    }
     clock_gettime(_CLOCK_PROCESS_CPUTIME_ID, &mut tp);
     start = (tp.tv_sec * 1000i32 as libc::c_long + tp.tv_nsec / 1000000i32 as libc::c_long)
         as libc::c_uint;
     total_start = start;
-    ret = loader.expect("non-null function pointer")(decoder, path);
+
+    ret = if strcasecmp(ext, b"jpg\x00" as *const u8 as *const libc::c_char) == 0i32
+        || strcasecmp(ext, b"jpeg\x00" as *const u8 as *const libc::c_char) == 0i32
+    {
+        load_jpeg(decoder, path)
+    } else if strcasecmp(ext, b"png\x00" as *const u8 as *const libc::c_char) == 0i32 {
+        load_png(decoder, path)
+    } else {
+        panic!("unsupported extension");
+    };
     clock_gettime(_CLOCK_PROCESS_CPUTIME_ID, &mut tp);
     (*info).load_time = ((tp.tv_sec * 1000i32 as libc::c_long
         + tp.tv_nsec / 1000000i32 as libc::c_long) as libc::c_uint)
@@ -394,7 +383,7 @@ unsafe extern "C" fn scan_file(
                     payload_len: 0,
                     eci: 0,
                 };
-                let mut err: quirc_decode_error_t = quirc_decode(&mut code_0, &mut data_0);
+                let mut err = quirc_decode(&mut code_0, &mut data_0);
                 if err as u64 != 0 {
                     printf(
                         b"  ERROR: %s\n\n\x00" as *const u8 as *const libc::c_char,
@@ -412,7 +401,7 @@ unsafe extern "C" fn scan_file(
     (*info).file_count = 1i32;
     return 1i32;
 }
-unsafe extern "C" fn scan_dir(
+unsafe fn scan_dir(
     mut path: *const libc::c_char,
     mut filename: *const libc::c_char,
     mut info: *mut result_info,
@@ -465,10 +454,7 @@ unsafe extern "C" fn scan_dir(
     }
     return (count > 0i32) as libc::c_int;
 }
-unsafe extern "C" fn test_scan(
-    mut path: *const libc::c_char,
-    mut info: *mut result_info,
-) -> libc::c_int {
+unsafe fn test_scan(mut path: *const libc::c_char, mut info: *mut result_info) -> libc::c_int {
     let mut len: libc::c_int = strlen(path) as libc::c_int;
     let mut st: stat = stat {
         st_dev: 0,
@@ -529,10 +515,8 @@ unsafe extern "C" fn test_scan(
     }
     return 0i32;
 }
-unsafe extern "C" fn run_tests(
-    mut argc: libc::c_int,
-    mut argv: *mut *mut libc::c_char,
-) -> libc::c_int {
+
+unsafe fn run_tests(mut argc: libc::c_int, mut argv: *mut *mut libc::c_char) -> libc::c_int {
     let mut sum: result_info = result_info {
         file_count: 0,
         id_count: 0,
@@ -625,6 +609,66 @@ unsafe fn main_0(mut argc: libc::c_int, mut argv: *mut *mut libc::c_char) -> lib
     argv = argv.offset(optind as isize);
     argc -= optind;
     return run_tests(argc, argv);
+}
+
+unsafe fn dump_data(data: *const quirc_data) {
+    let data = *data;
+    let levels = "MLHQ";
+
+    println!("    Version: {}", data.version);
+    println!(
+        "    ECC level: {}",
+        levels.as_bytes()[data.ecc_level as usize] as char
+    );
+    println!("    Mask: {}", data.mask);
+    println!(
+        "    Data type: {} ({})",
+        data.data_type,
+        data_type_str(data.data_type)
+    );
+    println!("    Length: {}", data.payload_len);
+    println!(
+        "    Payload: {:?}",
+        &data.payload[..data.payload_len as usize]
+    );
+
+    if data.eci != 0 {
+        println!("    ECI: {}", data.eci);
+    }
+}
+
+fn data_type_str(dt: i32) -> &'static str {
+    match dt {
+        QUIRC_DATA_TYPE_NUMERIC => "NUMERIC",
+        QUIRC_DATA_TYPE_ALPHA => "ALPHA",
+        QUIRC_DATA_TYPE_BYTE => "BYTE",
+        QUIRC_DATA_TYPE_KANJI => "KANJI",
+        _ => "unknown",
+    }
+}
+
+unsafe fn dump_cells(code: *const quirc_code) {
+    let code = *code;
+
+    print!("    {} cells, corners:", code.size);
+    for u in 0..4 {
+        print!(" ({},{})", code.corners[u].x, code.corners[u].y);
+    }
+    println!();
+
+    for v in 0..code.size {
+        print!("    ");
+        for u in 0..code.size {
+            let p = v * code.size + u;
+
+            if (code.cell_bitmap[(p >> 3) as usize] & (1 << (p & 7))) != 0 {
+                print!("[]");
+            } else {
+                print!("  ");
+            }
+        }
+        println!();
+    }
 }
 
 fn main() {
