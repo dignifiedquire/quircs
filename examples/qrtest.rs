@@ -9,6 +9,8 @@
 
 use libc;
 use quircs::*;
+use std::ffi::CStr;
+use std::path::PathBuf;
 
 extern "C" {
     pub type __sFILEX;
@@ -206,7 +208,7 @@ pub struct result_info {
     pub total_time: libc::c_uint,
 }
 
-static mut want_verbose: libc::c_int = 0i32;
+static mut want_verbose: libc::c_int = 1i32;
 static mut want_cell_dump: libc::c_int = 0i32;
 static mut decoder: *mut Quirc = 0 as *const Quirc as *mut Quirc;
 
@@ -261,58 +263,57 @@ unsafe fn add_result(mut sum: *mut result_info, mut inf: *mut result_info) {
     (*sum).total_time = (*sum).total_time.wrapping_add((*inf).total_time);
 }
 
-unsafe fn load_jpeg(dec: *mut Quirc, path: *const libc::c_char) -> libc::c_int {
+unsafe fn load_jpeg(dec: *mut Quirc, path: &PathBuf) -> libc::c_int {
     todo!()
 }
 
-unsafe fn load_png(dec: *mut Quirc, path: *const libc::c_char) -> libc::c_int {
-    todo!()
+unsafe fn load_png(dec: *mut Quirc, path: &PathBuf) -> libc::c_int {
+    use image::GenericImageView;
+
+    println!("opening {}", path.display());
+    let img = image::open(&path)
+        .expect("failed to open image")
+        .into_luma();
+    let width = img.width() as i32;
+    let height = img.height() as i32;
+
+    assert!(quirc_resize(dec, width, height) > -1);
+
+    let image_ptr = quirc_begin(dec, std::ptr::null_mut(), std::ptr::null_mut());
+    // copy image to the ptr
+    for (x, y, px) in img.enumerate_pixels() {
+        *image_ptr.add(y as usize * width as usize + x as usize) = px[0];
+    }
+
+    0
 }
 
-unsafe fn scan_file(
-    mut path: *const libc::c_char,
-    mut filename: *const libc::c_char,
-    mut info: *mut result_info,
-) -> libc::c_int {
-    let mut len: libc::c_int = strlen(filename) as libc::c_int;
-    let mut ext: *const libc::c_char = 0 as *const libc::c_char;
+unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
+    let path = std::path::PathBuf::from(path);
     let mut tp: timespec = timespec {
         tv_sec: 0,
         tv_nsec: 0,
     };
-    let mut start: libc::c_uint = 0;
-    let mut total_start: libc::c_uint = 0;
-    let mut ret: libc::c_int = 0;
-    let mut i: libc::c_int = 0;
-    while len >= 0i32 && *filename.offset(len as isize) as libc::c_int != '.' as i32 {
-        len -= 1
-    }
-    ext = filename.offset(len as isize).offset(1);
-    clock_gettime(_CLOCK_PROCESS_CPUTIME_ID, &mut tp);
-    start = (tp.tv_sec * 1000i32 as libc::c_long + tp.tv_nsec / 1000000i32 as libc::c_long)
-        as libc::c_uint;
-    total_start = start;
 
-    ret = if strcasecmp(ext, b"jpg\x00" as *const u8 as *const libc::c_char) == 0i32
-        || strcasecmp(ext, b"jpeg\x00" as *const u8 as *const libc::c_char) == 0i32
-    {
-        load_jpeg(decoder, path)
-    } else if strcasecmp(ext, b"png\x00" as *const u8 as *const libc::c_char) == 0i32 {
-        load_png(decoder, path)
+    clock_gettime(_CLOCK_PROCESS_CPUTIME_ID, &mut tp);
+    let mut start = (tp.tv_sec * 1000i32 as libc::c_long + tp.tv_nsec / 1000000i32 as libc::c_long)
+        as libc::c_uint;
+    let mut total_start = start;
+
+    let ret = if path.extension().unwrap() == "jpg" || path.extension().unwrap() == "jpeg" {
+        load_jpeg(decoder, &path)
+    } else if path.extension().unwrap() == "png" {
+        load_png(decoder, &path)
     } else {
-        panic!("unsupported extension");
+        panic!("unsupported extension: {:?}", path.extension());
     };
+
     clock_gettime(_CLOCK_PROCESS_CPUTIME_ID, &mut tp);
     (*info).load_time = ((tp.tv_sec * 1000i32 as libc::c_long
         + tp.tv_nsec / 1000000i32 as libc::c_long) as libc::c_uint)
         .wrapping_sub(start);
     if ret < 0i32 {
-        fprintf(
-            __stderrp,
-            b"%s: load failed\n\x00" as *const u8 as *const libc::c_char,
-            filename,
-        );
-        return -1i32;
+        panic!("{}: load failed", path.display());
     }
     clock_gettime(_CLOCK_PROCESS_CPUTIME_ID, &mut tp);
     start = (tp.tv_sec * 1000i32 as libc::c_long + tp.tv_nsec / 1000000i32 as libc::c_long)
@@ -323,7 +324,7 @@ unsafe fn scan_file(
         + tp.tv_nsec / 1000000i32 as libc::c_long) as libc::c_uint)
         .wrapping_sub(start);
     (*info).id_count = quirc_count(decoder);
-    i = 0i32;
+    let mut i = 0i32;
     while i < (*info).id_count {
         let mut code: quirc_code = quirc_code {
             corners: [quirc_point { x: 0, y: 0 }; 4],
@@ -351,9 +352,9 @@ unsafe fn scan_file(
             as libc::c_uint)
             .wrapping_sub(total_start),
     );
-    printf(
-        b"  %-30s: %5u %5u %5u %5d %5d\n\x00" as *const u8 as *const libc::c_char,
-        filename,
+    println!(
+        "  {:?}: {} {} {} {} {}\n",
+        path.file_name().unwrap(),
         (*info).load_time,
         (*info).identify_time,
         (*info).total_time,
@@ -401,122 +402,12 @@ unsafe fn scan_file(
     (*info).file_count = 1i32;
     return 1i32;
 }
-unsafe fn scan_dir(
-    mut path: *const libc::c_char,
-    mut filename: *const libc::c_char,
-    mut info: *mut result_info,
-) -> libc::c_int {
-    let mut d: *mut DIR = opendir(path);
-    let mut ent: *mut dirent = 0 as *mut dirent;
-    let mut count: libc::c_int = 0i32;
-    if d.is_null() {
-        fprintf(
-            __stderrp,
-            b"%s: opendir: %s\n\x00" as *const u8 as *const libc::c_char,
-            path,
-            strerror(*__error()),
-        );
-        return -1i32;
-    }
-    printf(b"%s:\n\x00" as *const u8 as *const libc::c_char, path);
-    loop {
-        ent = readdir(d);
-        if ent.is_null() {
-            break;
-        }
-        if (*ent).d_name[0] as libc::c_int != '.' as i32 {
-            let mut fullpath: [libc::c_char; 1024] = [0; 1024];
-            let mut sub: result_info = result_info {
-                file_count: 0,
-                id_count: 0,
-                decode_count: 0,
-                load_time: 0,
-                identify_time: 0,
-                total_time: 0,
-            };
-            snprintf(
-                fullpath.as_mut_ptr(),
-                ::std::mem::size_of::<[libc::c_char; 1024]>() as libc::c_ulong,
-                b"%s/%s\x00" as *const u8 as *const libc::c_char,
-                path,
-                (*ent).d_name.as_mut_ptr(),
-            );
-            if test_scan(fullpath.as_mut_ptr(), &mut sub) > 0i32 {
-                add_result(info, &mut sub);
-                count += 1
-            }
-        }
-    }
-    closedir(d);
-    if count > 1i32 {
-        print_result(filename, info);
-        puts(b"\x00" as *const u8 as *const libc::c_char);
-    }
-    return (count > 0i32) as libc::c_int;
-}
-unsafe fn test_scan(mut path: *const libc::c_char, mut info: *mut result_info) -> libc::c_int {
-    let mut len: libc::c_int = strlen(path) as libc::c_int;
-    let mut st: stat = stat {
-        st_dev: 0,
-        st_mode: 0,
-        st_nlink: 0,
-        st_ino: 0,
-        st_uid: 0,
-        st_gid: 0,
-        st_rdev: 0,
-        st_atimespec: timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        },
-        st_mtimespec: timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        },
-        st_ctimespec: timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        },
-        st_birthtimespec: timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        },
-        st_size: 0,
-        st_blocks: 0,
-        st_blksize: 0,
-        st_flags: 0,
-        st_gen: 0,
-        st_lspare: 0,
-        st_qspare: [0; 2],
-    };
-    let mut filename: *const libc::c_char = 0 as *const libc::c_char;
-    memset(
-        info as *mut libc::c_void,
-        0i32,
-        ::std::mem::size_of::<result_info>() as libc::c_ulong,
-    );
-    while len >= 0i32 && *path.offset(len as isize) as libc::c_int != '/' as i32 {
-        len -= 1
-    }
-    filename = path.offset(len as isize).offset(1);
-    if lstat(path, &mut st) < 0i32 {
-        fprintf(
-            __stderrp,
-            b"%s: lstat: %s\n\x00" as *const u8 as *const libc::c_char,
-            path,
-            strerror(*__error()),
-        );
-        return -1i32;
-    }
-    if st.st_mode as libc::c_int & 0o170000i32 == 0o100000i32 {
-        return scan_file(path, filename, info);
-    }
-    if st.st_mode as libc::c_int & 0o170000i32 == 0o40000i32 {
-        return scan_dir(path, filename, info);
-    }
-    return 0i32;
+
+unsafe fn test_scan(path: &str, mut info: *mut result_info) -> libc::c_int {
+    scan_file(path, info)
 }
 
-unsafe fn run_tests(mut argc: libc::c_int, mut argv: *mut *mut libc::c_char) -> libc::c_int {
+unsafe fn run_tests(paths: &[String]) -> libc::c_int {
     let mut sum: result_info = result_info {
         file_count: 0,
         id_count: 0,
@@ -528,16 +419,9 @@ unsafe fn run_tests(mut argc: libc::c_int, mut argv: *mut *mut libc::c_char) -> 
     let mut count: libc::c_int = 0i32;
     let mut i: libc::c_int = 0;
     decoder = quirc_new();
-    if decoder.is_null() {
-        perror(b"quirc_new\x00" as *const u8 as *const libc::c_char);
-        return -1i32;
-    }
-    printf(
-        b"  %-30s  %17s %11s\n\x00" as *const u8 as *const libc::c_char,
-        b"\x00" as *const u8 as *const libc::c_char,
-        b"Time (ms)\x00" as *const u8 as *const libc::c_char,
-        b"Count\x00" as *const u8 as *const libc::c_char,
-    );
+    assert!(!decoder.is_null(), "quirc_new");
+
+    println!("  %-30s  %17s %11s\nTime (ms)Count\x00",);
     printf(
         b"  %-30s  %5s %5s %5s %5s %5s\n\x00" as *const u8 as *const libc::c_char,
         b"Filename\x00" as *const u8 as *const libc::c_char,
@@ -556,8 +440,8 @@ unsafe fn run_tests(mut argc: libc::c_int, mut argv: *mut *mut libc::c_char) -> 
         0i32,
         ::std::mem::size_of::<result_info>() as libc::c_ulong,
     );
-    i = 0i32;
-    while i < argc {
+
+    for path in paths {
         let mut info: result_info = result_info {
             file_count: 0,
             id_count: 0,
@@ -566,7 +450,7 @@ unsafe fn run_tests(mut argc: libc::c_int, mut argv: *mut *mut libc::c_char) -> 
             identify_time: 0,
             total_time: 0,
         };
-        if test_scan(*argv.offset(i as isize), &mut info) > 0i32 {
+        if test_scan(path, &mut info) > 0i32 {
             add_result(&mut sum, &mut info);
             count += 1
         }
@@ -578,37 +462,15 @@ unsafe fn run_tests(mut argc: libc::c_int, mut argv: *mut *mut libc::c_char) -> 
     quirc_destroy(decoder);
     return 0i32;
 }
-unsafe fn main_0(mut argc: libc::c_int, mut argv: *mut *mut libc::c_char) -> libc::c_int {
-    let mut opt: libc::c_int = 0;
-    printf(b"quirc test program\n\x00" as *const u8 as *const libc::c_char);
-    printf(
-        b"Copyright (C) 2010-2012 Daniel Beer <dlbeer@gmail.com>\n\x00" as *const u8
-            as *const libc::c_char,
+unsafe fn main_0(args: Vec<String>) -> libc::c_int {
+    println!("quirc test program");
+    println!("Copyright (C) 2010-2012 Daniel Beer <dlbeer@gmail.com>");
+    println!(
+        "Library version: {}\n",
+        CStr::from_ptr(quirc_version()).to_str().unwrap()
     );
-    printf(
-        b"Library version: %s\n\x00" as *const u8 as *const libc::c_char,
-        quirc_version(),
-    );
-    printf(b"\n\x00" as *const u8 as *const libc::c_char);
-    loop {
-        opt = getopt(
-            argc,
-            argv as *const *mut libc::c_char,
-            b"vd\x00" as *const u8 as *const libc::c_char,
-        );
-        if !(opt >= 0i32) {
-            break;
-        }
-        match opt {
-            118 => want_verbose = 1i32,
-            100 => want_cell_dump = 1i32,
-            63 => return -1i32,
-            _ => {}
-        }
-    }
-    argv = argv.offset(optind as isize);
-    argc -= optind;
-    return run_tests(argc, argv);
+
+    run_tests(&args)
 }
 
 unsafe fn dump_data(data: *const quirc_data) {
@@ -629,7 +491,7 @@ unsafe fn dump_data(data: *const quirc_data) {
     println!("    Length: {}", data.payload_len);
     println!(
         "    Payload: {:?}",
-        &data.payload[..data.payload_len as usize]
+        std::str::from_utf8(&data.payload[..data.payload_len as usize])
     );
 
     if data.eci != 0 {
@@ -672,19 +534,6 @@ unsafe fn dump_cells(code: *const quirc_code) {
 }
 
 fn main() {
-    let mut args: Vec<*mut libc::c_char> = Vec::new();
-    for arg in ::std::env::args() {
-        args.push(
-            ::std::ffi::CString::new(arg)
-                .expect("Failed to convert argument into CString.")
-                .into_raw(),
-        );
-    }
-    args.push(::std::ptr::null_mut());
-    unsafe {
-        ::std::process::exit(main_0(
-            (args.len() - 1) as libc::c_int,
-            args.as_mut_ptr() as *mut *mut libc::c_char,
-        ) as i32)
-    }
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    unsafe { std::process::exit(main_0(args) as i32) }
 }

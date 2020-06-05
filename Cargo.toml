@@ -7,8 +7,10 @@ edition = "2018"
 [lib]
 crate-type = ["staticlib", "rlib"]
 
-
 [dependencies]
 libc = "0.2"
+
+[dev-dependencies]
+image = "0.23.4"
 
 
