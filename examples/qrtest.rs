@@ -256,7 +256,7 @@ unsafe fn load_png(dec: *mut Quirc, path: &PathBuf) -> i32 {
 
     assert!(quirc_resize(dec, width, height) > -1);
 
-    let image_ptr = quirc_begin(dec, std::ptr::null_mut(), std::ptr::null_mut());
+    let image_ptr = quirc_begin(dec, &mut 0, &mut 0);
     // copy image to the ptr
     for (x, y, px) in img.enumerate_pixels() {
         *image_ptr.add(y as usize * width as usize + x as usize) = px[0];
