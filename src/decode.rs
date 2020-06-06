@@ -675,25 +675,19 @@ fn decode_eci(mut data: &mut Data, ds: &mut Datastream) -> quirc_decode_error_t 
         return QUIRC_ERROR_DATA_UNDERFLOW;
     }
     data.eci = Eci::from_u32(take_bits(ds, 8) as u32);
-    if data.eci.and_then(|e| e.to_u32()).unwrap_or_default() & 0xc0 as libc::c_uint
-        == 0x80 as libc::c_uint
-    {
+    if data.eci.and_then(|e| e.to_u32()).unwrap_or_default() & 0xc0 as u32 == 0x80 as u32 {
         if bits_remaining(ds) < 8 {
             return QUIRC_ERROR_DATA_UNDERFLOW;
         }
         data.eci = Eci::from_u32(
-            data.eci.and_then(|e| e.to_u32()).unwrap_or_default() << 8
-                | take_bits(ds, 8) as libc::c_uint,
+            data.eci.and_then(|e| e.to_u32()).unwrap_or_default() << 8 | take_bits(ds, 8) as u32,
         );
-    } else if data.eci.and_then(|e| e.to_u32()).unwrap_or_default() & 0xe0 as libc::c_uint
-        == 0xc0 as libc::c_uint
-    {
+    } else if data.eci.and_then(|e| e.to_u32()).unwrap_or_default() & 0xe0 as u32 == 0xc0 as u32 {
         if bits_remaining(ds) < 16 {
             return QUIRC_ERROR_DATA_UNDERFLOW;
         }
         data.eci = Eci::from_u32(
-            data.eci.and_then(|e| e.to_u32()).unwrap_or_default() << 16
-                | take_bits(ds, 16) as libc::c_uint,
+            data.eci.and_then(|e| e.to_u32()).unwrap_or_default() << 16 | take_bits(ds, 16) as u32,
         );
     }
 

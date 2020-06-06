@@ -65,6 +65,13 @@ pub struct Point {
     pub y: i32,
 }
 
+impl Point {
+    pub fn clear(&mut self) {
+        self.x = 0;
+        self.y = 0;
+    }
+}
+
 #[derive(Debug, Copy, Clone, Default)]
 #[repr(C)]
 pub struct Capstone {
@@ -109,6 +116,18 @@ pub struct Code {
     /// where i = (y * size) + x.
     pub size: i32,
     pub cell_bitmap: [u8; 3917],
+}
+
+impl Code {
+    pub fn clear(&mut self) {
+        for val in self.corners.iter_mut() {
+            val.clear();
+        }
+        self.size = 0;
+        for val in self.cell_bitmap.iter_mut() {
+            *val = 0;
+        }
+    }
 }
 
 /// This structure holds the decoded QR-code data

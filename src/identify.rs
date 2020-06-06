@@ -1,8 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use libc::{memcpy, memmove, memset};
-
 use crate::quirc::*;
 use crate::version_db::*;
 
@@ -20,12 +18,10 @@ struct NeighbourList {
     pub count: i32,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-struct PolygonScoreData {
+struct PolygonScoreData<'a> {
     pub ref_0: Point,
     pub scores: [i32; 4],
-    pub corners: *mut Point,
+    pub corners: &'a mut [Point; 4],
 }
 
 // ---  Linear algebra routines
@@ -121,7 +117,7 @@ const FLOOD_FILL_MAX_DEPTH: i32 = 4096;
 #[derive(Clone)]
 enum UserData<'a> {
     Region(Rc<RefCell<&'a mut Region>>),
-    Polygon(Rc<RefCell<&'a mut PolygonScoreData>>),
+    Polygon(Rc<RefCell<&'a mut PolygonScoreData<'a>>>),
     None,
 }
 
@@ -195,7 +191,7 @@ unsafe fn flood_fill_seed<F>(
 unsafe fn otsu(q: *const Quirc) -> u8 {
     let numPixels = (*q).w * (*q).h;
     // Calculate histogram
-    let mut histogram: [libc::c_uint; 256] = [0; 256];
+    let mut histogram: [u32; 256] = [0; 256];
     let mut ptr = (*q).image.as_ptr();
     let mut length = numPixels;
     loop {
@@ -210,9 +206,9 @@ unsafe fn otsu(q: *const Quirc) -> u8 {
         histogram[value as usize] = histogram[value as usize].wrapping_add(1)
     }
     // Calculate weighted sum of histogram values
-    let mut sum: libc::c_uint = 0 as libc::c_uint;
-    let mut i = 0 as libc::c_uint;
-    while i <= 255 as libc::c_uint {
+    let mut sum: u32 = 0 as u32;
+    let mut i = 0 as u32;
+    while i <= 255 as u32 {
         sum = sum.wrapping_add(i.wrapping_mul(histogram[i as usize]));
         i = i.wrapping_add(1)
     }
@@ -221,18 +217,17 @@ unsafe fn otsu(q: *const Quirc) -> u8 {
     let mut q1: i32 = 0;
     let mut max: f64 = 0 as f64;
     let mut threshold: u8 = 0 as u8;
-    i = 0 as libc::c_uint;
-    while i <= 255 as libc::c_uint {
+    i = 0 as u32;
+    while i <= 255 as u32 {
         // Weighted background
-        q1 = (q1 as libc::c_uint).wrapping_add(histogram[i as usize]) as i32 as i32;
+        q1 = (q1 as u32).wrapping_add(histogram[i as usize]) as i32 as i32;
         if !(q1 == 0) {
             // Weighted foreground
             let q2 = numPixels as i32 - q1;
             if q2 == 0 {
                 break;
             }
-            sumB = (sumB as libc::c_uint).wrapping_add(i.wrapping_mul(histogram[i as usize])) as i32
-                as i32;
+            sumB = (sumB as u32).wrapping_add(i.wrapping_mul(histogram[i as usize])) as i32 as i32;
             let m1: f64 = sumB as f64 / q1 as f64;
             let m2: f64 = (sum as f64 - sumB as f64) / q2 as f64;
             let m1m2: f64 = m1 - m2;
@@ -302,14 +297,12 @@ fn find_one_corner(user_data: UserData<'_>, y: i32, left: i32, right: i32) {
         let dy: i32 = y - psd.ref_0.y;
 
         for i in 0..2 {
-            let dx = xs[i as usize] - (*psd).ref_0.x;
+            let dx = xs[i] - (*psd).ref_0.x;
             let d = dx * dx + dy * dy;
             if d > psd.scores[0] {
                 psd.scores[0] = d;
-                unsafe {
-                    (*psd.corners.offset(0)).x = xs[i as usize];
-                    (*psd.corners.offset(0)).y = y;
-                }
+                psd.corners[0].x = xs[i];
+                psd.corners[0].y = y;
             }
         }
     } else {
@@ -323,17 +316,15 @@ fn find_other_corners(user_data: UserData<'_>, y: i32, left: i32, right: i32) {
         let xs: [i32; 2] = [left, right];
 
         for i in 0..2 {
-            let up: i32 = xs[i as usize] * psd.ref_0.x + y * psd.ref_0.y;
-            let right_0: i32 = xs[i as usize] * -psd.ref_0.y + y * psd.ref_0.x;
+            let up = xs[i] * psd.ref_0.x + y * psd.ref_0.y;
+            let right_0 = xs[i] * -psd.ref_0.y + y * psd.ref_0.x;
             let scores: [i32; 4] = [up, right_0, -up, -right_0];
 
             for j in 0..4 {
-                if scores[j as usize] > psd.scores[j as usize] {
-                    psd.scores[j as usize] = scores[j as usize];
-                    unsafe {
-                        (*psd.corners.offset(j as isize)).x = xs[i as usize];
-                        (*psd.corners.offset(j as isize)).y = y;
-                    }
+                if scores[j] > psd.scores[j] {
+                    psd.scores[j] = scores[j];
+                    psd.corners[j].x = xs[i];
+                    psd.corners[j].y = y;
                 }
             }
         }
@@ -342,51 +333,45 @@ fn find_other_corners(user_data: UserData<'_>, y: i32, left: i32, right: i32) {
     }
 }
 
-unsafe fn find_region_corners(q: *mut Quirc, rcode: i32, ref_0: *const Point, corners: *mut Point) {
-    let region: *mut Region = &mut *(*q).regions.as_mut_ptr().offset(rcode as isize) as *mut Region;
-    let mut psd: PolygonScoreData = PolygonScoreData {
-        ref_0: Point { x: 0, y: 0 },
-        scores: [0; 4],
+unsafe fn find_region_corners(q: *mut Quirc, rcode: i32, point: &Point, corners: &mut [Point; 4]) {
+    let region = (*q).regions[rcode as usize];
+    let mut psd = PolygonScoreData {
+        ref_0: *point,
+        scores: [-1, 0, 0, 0],
         corners,
     };
-
-    memcpy(
-        &mut psd.ref_0 as *mut Point as *mut libc::c_void,
-        ref_0 as *const libc::c_void,
-        std::mem::size_of::<Point>(),
-    );
-    psd.scores[0] = -1;
+    let psd_ref = Rc::new(RefCell::new(&mut psd));
     flood_fill_seed(
         q,
-        (*region).seed.x,
-        (*region).seed.y,
+        region.seed.x,
+        region.seed.y,
         rcode,
         1,
         Some(&find_one_corner),
-        UserData::Polygon(Rc::new(RefCell::new(&mut psd))),
+        UserData::Polygon(psd_ref.clone()),
         0,
     );
-    psd.ref_0.x = (*psd.corners.offset(0)).x - psd.ref_0.x;
-    psd.ref_0.y = (*psd.corners.offset(0)).y - psd.ref_0.y;
-    let mut i = 0;
-    while i < 4 {
-        memcpy(
-            &mut *psd.corners.offset(i as isize) as *mut Point as *mut libc::c_void,
-            &mut (*region).seed as *mut Point as *const libc::c_void,
-            std::mem::size_of::<Point>(),
-        );
-        i += 1
+    // Safe to unwrap, because the only reference was given to the call
+    // to flood_fill_seed above.
+    let mut psd = Rc::try_unwrap(psd_ref)
+        .map_err(|_| ())
+        .unwrap()
+        .into_inner();
+    psd.ref_0.x = psd.corners[0].x - psd.ref_0.x;
+    psd.ref_0.y = psd.corners[0].y - psd.ref_0.y;
+    for i in 0..4 {
+        psd.corners[i] = region.seed;
     }
-    i = (*region).seed.x * psd.ref_0.x + (*region).seed.y * psd.ref_0.y;
+    let i = region.seed.x * psd.ref_0.x + region.seed.y * psd.ref_0.y;
     psd.scores[0] = i;
     psd.scores[2] = -i;
-    i = (*region).seed.x * -psd.ref_0.y + (*region).seed.y * psd.ref_0.x;
+    let i = region.seed.x * -psd.ref_0.y + region.seed.y * psd.ref_0.x;
     psd.scores[1] = i;
     psd.scores[3] = -i;
     flood_fill_seed(
         q,
-        (*region).seed.x,
-        (*region).seed.y,
+        region.seed.x,
+        region.seed.y,
         1,
         rcode,
         Some(&find_other_corners),
@@ -412,22 +397,19 @@ unsafe fn record_capstone(q: *mut Quirc, ring: i32, stone: i32) {
 
     (*stone_reg).capstone = cs_index;
     (*ring_reg).capstone = cs_index;
+
     /* Find the corners of the ring */
-    find_region_corners(
-        q,
-        ring,
-        &mut (*stone_reg).seed,
-        capstone.corners.as_mut_ptr(),
-    );
+    find_region_corners(q, ring, &(*stone_reg).seed, &mut capstone.corners);
+
     /* Set up the perspective transform and find the center */
-    perspective_setup(&mut capstone.c, &capstone.corners, 7.0f64, 7.0f64);
+    perspective_setup(&mut capstone.c, &capstone.corners, 7.0, 7.0);
     perspective_map(&capstone.c, 3.5, 3.5, &mut capstone.center);
 }
 
 unsafe fn test_capstone(q: *mut Quirc, x: i32, y: i32, pb: *mut i32) {
-    let ring_right: i32 = region_code(q, x - *pb.offset(4), y);
-    let stone: i32 = region_code(q, x - *pb.offset(4) - *pb.offset(3) - *pb.offset(2), y);
-    let ring_left: i32 = region_code(
+    let ring_right = region_code(q, x - *pb.offset(4), y);
+    let stone = region_code(q, x - *pb.offset(4) - *pb.offset(3) - *pb.offset(2), y);
+    let ring_left = region_code(
         q,
         x - *pb.offset(4) - *pb.offset(3) - *pb.offset(2) - *pb.offset(1) - *pb.offset(0),
         y,
@@ -459,23 +441,19 @@ unsafe fn test_capstone(q: *mut Quirc, x: i32, y: i32, pb: *mut i32) {
 
 unsafe fn finder_scan(q: *mut Quirc, y: i32) {
     let row = (*q).pixels.as_ptr().offset((y * (*q).w as i32) as isize);
-    let mut last_color: i32 = 0;
-    let mut run_length: i32 = 0;
-    let mut run_count: i32 = 0;
+    let mut last_color = 0;
+    let mut run_length = 0;
+    let mut run_count = 0;
     let mut pb: [i32; 5] = [0; 5];
     let mut x = 0;
     while x < (*q).w {
-        let color: i32 = if *row.offset(x as isize) as i32 != 0 {
+        let color = if *row.offset(x as isize) as i32 != 0 {
             1
         } else {
             0
         };
         if x != 0 && color != last_color {
-            memmove(
-                pb.as_mut_ptr() as *mut libc::c_void,
-                pb.as_mut_ptr().offset(1) as *const libc::c_void,
-                (std::mem::size_of::<i32>()).wrapping_mul(4),
-            );
+            pb.copy_within(1.., 0);
             pb[4] = run_length;
             run_length = 0;
             run_count += 1;
@@ -517,18 +495,13 @@ unsafe fn find_alignment_pattern(q: *mut Quirc, index: i32) {
         .offset(*(*qr).caps.as_mut_ptr().offset(2) as isize)
         as *mut Capstone;
     let mut a: Point = Point { x: 0, y: 0 };
-    let mut b: Point = Point { x: 0, y: 0 };
     let mut c: Point = Point { x: 0, y: 0 };
     let mut step_size: i32 = 1;
     let mut dir: i32 = 0;
     let mut u: f64 = 0.;
     let mut v: f64 = 0.;
     /* Grab our previous estimate of the alignment pattern corner */
-    memcpy(
-        &mut b as *mut Point as *mut libc::c_void,
-        &mut (*qr).align as *mut Point as *const libc::c_void,
-        std::mem::size_of::<Point>(),
-    );
+    let mut b = (*qr).align;
     /* Guess another two corners of the alignment pattern so that we
      * can estimate its size.
      */
@@ -572,13 +545,11 @@ fn find_leftmost_to_line(user_data: UserData<'_>, y: i32, left: i32, right: i32)
         let xs: [i32; 2] = [left, right];
 
         for i in 0..2 {
-            let d = -psd.ref_0.y * xs[i as usize] + psd.ref_0.x * y;
+            let d = -psd.ref_0.y * xs[i] + psd.ref_0.x * y;
             if d < psd.scores[0] {
                 psd.scores[0] = d;
-                unsafe {
-                    (*psd.corners.offset(0)).x = xs[i as usize];
-                    (*psd.corners.offset(0)).y = y;
-                }
+                psd.corners[0].x = xs[i];
+                psd.corners[0].y = y;
             }
         }
     } else {
@@ -882,47 +853,16 @@ unsafe fn jiggle_perspective(q: *mut Quirc, index: i32) {
 /// chosen, we call this function to set up a grid-reading perspective
 /// transform.
 unsafe fn setup_qr_perspective(q: *mut Quirc, index: i32) {
-    let qr: *mut Grid = &mut *(*q).grids.as_mut_ptr().offset(index as isize) as *mut Grid;
-    let mut rect: [Point; 4] = [Point { x: 0, y: 0 }; 4];
+    let qr = &mut *(*q).grids.as_mut_ptr().offset(index as isize) as *mut Grid;
+
     /* Set up the perspective map for reading the grid */
-    memcpy(
-        &mut *rect.as_mut_ptr().offset(0) as *mut Point as *mut libc::c_void,
-        &mut *(*(*q)
-            .capstones
-            .as_mut_ptr()
-            .offset(*(*qr).caps.as_mut_ptr().offset(1) as isize))
-        .corners
-        .as_mut_ptr()
-        .offset(0) as *mut Point as *const libc::c_void,
-        std::mem::size_of::<Point>(),
-    );
-    memcpy(
-        &mut *rect.as_mut_ptr().offset(1) as *mut Point as *mut libc::c_void,
-        &mut *(*(*q)
-            .capstones
-            .as_mut_ptr()
-            .offset(*(*qr).caps.as_mut_ptr().offset(2) as isize))
-        .corners
-        .as_mut_ptr()
-        .offset(0) as *mut Point as *const libc::c_void,
-        std::mem::size_of::<Point>(),
-    );
-    memcpy(
-        &mut *rect.as_mut_ptr().offset(2) as *mut Point as *mut libc::c_void,
-        &mut (*qr).align as *mut Point as *const libc::c_void,
-        std::mem::size_of::<Point>(),
-    );
-    memcpy(
-        &mut *rect.as_mut_ptr().offset(3) as *mut Point as *mut libc::c_void,
-        &mut *(*(*q)
-            .capstones
-            .as_mut_ptr()
-            .offset(*(*qr).caps.as_mut_ptr().offset(0) as isize))
-        .corners
-        .as_mut_ptr()
-        .offset(0) as *mut Point as *const libc::c_void,
-        std::mem::size_of::<Point>(),
-    );
+    let rect = [
+        (*q).capstones[(*qr).caps[1] as usize].corners[0],
+        (*q).capstones[(*qr).caps[2] as usize].corners[0],
+        (*qr).align,
+        (*q).capstones[(*qr).caps[0] as usize].corners[0],
+    ];
+
     perspective_setup(
         &mut (*qr).c,
         &rect,
@@ -935,56 +875,41 @@ unsafe fn setup_qr_perspective(q: *mut Quirc, index: i32) {
 /// Rotate the capstone with so that corner 0 is the leftmost with respect
 /// to the given reference line.
 unsafe fn rotate_capstone(cap: *mut Capstone, h0: *const Point, hd: *const Point) {
-    let mut copy: [Point; 4] = [Point { x: 0, y: 0 }; 4];
-    let mut best: i32 = 0;
-    let mut best_score: i32 = 2147483647;
-    let mut j = 0;
-    while j < 4 {
-        let p: *mut Point = &mut *(*cap).corners.as_mut_ptr().offset(j as isize) as *mut Point;
-        let score: i32 = ((*p).x - (*h0).x) * -(*hd).y + ((*p).y - (*h0).y) * (*hd).x;
+    let mut copy: [Point; 4] = [Point::default(); 4];
+    let mut best = 0;
+    let mut best_score = 2147483647;
+
+    for j in 0..4 {
+        let p = &(*cap).corners[j];
+        let score = (p.x - (*h0).x) * -(*hd).y + (p.y - (*h0).y) * (*hd).x;
         if j == 0 || score < best_score {
             best = j;
             best_score = score
         }
-        j += 1
     }
+
     /* Rotate the capstone */
-    j = 0;
-    while j < 4 {
-        memcpy(
-            &mut *copy.as_mut_ptr().offset(j as isize) as *mut Point as *mut libc::c_void,
-            &mut *(*cap)
-                .corners
-                .as_mut_ptr()
-                .offset(((j + best) % 4) as isize) as *mut Point as *const libc::c_void,
-            std::mem::size_of::<Point>(),
-        );
-        j += 1
+    for j in 0..4 {
+        copy[j] = (*cap).corners[(j + best) % 4];
     }
-    memcpy(
-        (*cap).corners.as_mut_ptr() as *mut libc::c_void,
-        copy.as_mut_ptr() as *const libc::c_void,
-        std::mem::size_of::<[Point; 4]>(),
-    );
+
+    (*cap).corners = copy;
     perspective_setup(&mut (*cap).c, &(*cap).corners, 7.0, 7.0);
 }
+
 unsafe fn record_qr_grid(q: *mut Quirc, mut a: i32, b: i32, mut c: i32) {
-    let mut h0: Point = Point { x: 0, y: 0 };
-    let mut hd: Point = Point { x: 0, y: 0 };
     if (*q).count() >= 8 {
         return;
     }
     /* Construct the hypotenuse line from A to C. B should be to
      * the left of this line.
      */
-    memcpy(
-        &mut h0 as *mut Point as *mut libc::c_void,
-        &mut (*(*q).capstones.as_mut_ptr().offset(a as isize)).center as *mut Point
-            as *const libc::c_void,
-        std::mem::size_of::<Point>(),
-    );
-    hd.x = (*q).capstones[c as usize].center.x - (*q).capstones[a as usize].center.x;
-    hd.y = (*q).capstones[c as usize].center.y - (*q).capstones[a as usize].center.y;
+    let mut h0 = (*q).capstones[a as usize].center;
+    let mut hd = Point {
+        x: (*q).capstones[c as usize].center.x - (*q).capstones[a as usize].center.x,
+        y: (*q).capstones[c as usize].center.y - (*q).capstones[a as usize].center.y,
+    };
+
     /* Make sure A-B-C is clockwise */
     if ((*q).capstones[b as usize].center.x - h0.x) * -hd.y
         + ((*q).capstones[b as usize].center.y - h0.y) * hd.x
@@ -1031,22 +956,10 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: i32, b: i32, mut c: i32) {
          * lines from capstones A and C.
          */
         if !(line_intersect(
-            &mut *(*(*q).capstones.as_mut_ptr().offset(a as isize))
-                .corners
-                .as_mut_ptr()
-                .offset(0),
-            &mut *(*(*q).capstones.as_mut_ptr().offset(a as isize))
-                .corners
-                .as_mut_ptr()
-                .offset(1),
-            &mut *(*(*q).capstones.as_mut_ptr().offset(c as isize))
-                .corners
-                .as_mut_ptr()
-                .offset(0),
-            &mut *(*(*q).capstones.as_mut_ptr().offset(c as isize))
-                .corners
-                .as_mut_ptr()
-                .offset(3),
+            &mut (*q).capstones[a as usize].corners[0],
+            &mut (*q).capstones[a as usize].corners[1],
+            &mut (*q).capstones[c as usize].corners[0],
+            &mut (*q).capstones[c as usize].corners[3],
             &mut (*qr).align,
         ) == 0)
         {
@@ -1058,33 +971,27 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: i32, b: i32, mut c: i32) {
                  * top-left of the QR grid.
                  */
                 if (*qr).align_region >= 0 {
-                    let mut psd: PolygonScoreData = PolygonScoreData {
-                        ref_0: Point { x: 0, y: 0 },
-                        scores: [0; 4],
-                        corners: 0 as *mut Point,
-                    };
-                    let reg: *mut Region = &mut *(*q)
-                        .regions
-                        .as_mut_ptr()
-                        .offset((*qr).align_region as isize)
-                        as *mut Region;
+                    let reg = &(*q).regions[(*qr).align_region as usize];
+
                     /* Start from some point inside the alignment pattern */
-                    memcpy(
-                        &mut (*qr).align as *mut Point as *mut libc::c_void,
-                        &mut (*reg).seed as *mut Point as *const libc::c_void,
-                        std::mem::size_of::<Point>(),
-                    );
-                    memcpy(
-                        &mut psd.ref_0 as *mut Point as *mut libc::c_void,
-                        &mut hd as *mut Point as *const libc::c_void,
-                        std::mem::size_of::<Point>(),
-                    );
-                    psd.corners = &mut (*qr).align;
+                    (*qr).align = reg.seed;
+
+                    let mut corners = [
+                        (*qr).align,
+                        Point::default(),
+                        Point::default(),
+                        Point::default(),
+                    ];
+                    let mut psd = PolygonScoreData {
+                        ref_0: hd,
+                        scores: [0; 4],
+                        corners: &mut corners,
+                    };
                     psd.scores[0] = -hd.y * (*qr).align.x + hd.x * (*qr).align.y;
                     flood_fill_seed::<fn(UserData<'_>, i32, i32, i32) -> ()>(
                         q,
-                        (*reg).seed.x,
-                        (*reg).seed.y,
+                        reg.seed.x,
+                        reg.seed.y,
                         (*qr).align_region,
                         1,
                         None,
@@ -1093,27 +1000,27 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: i32, b: i32, mut c: i32) {
                     );
                     flood_fill_seed(
                         q,
-                        (*reg).seed.x,
-                        (*reg).seed.y,
+                        reg.seed.x,
+                        reg.seed.y,
                         1,
                         (*qr).align_region,
                         Some(&find_leftmost_to_line),
                         UserData::Polygon(Rc::new(RefCell::new(&mut psd))),
                         0,
                     );
+                    (*qr).align = corners[0];
                 }
             }
             setup_qr_perspective(q, qr_index as i32);
             return;
         }
     }
+
     /* We've been unable to complete setup for this grid. Undo what we've
      * recorded and pretend it never happened.
      */
-    i = 0;
-    while i < 3 {
+    for i in 0..3 {
         (*q).capstones[(*qr).caps[i as usize] as usize].qr_grid = -1;
-        i += 1
     }
     (*q).grids.pop();
 }
@@ -1271,49 +1178,42 @@ pub unsafe fn quirc_end(q: *mut Quirc) {
 }
 
 /// Extract the QR-code specified by the given index.
-pub unsafe fn quirc_extract(q: *const Quirc, index: i32, mut code: *mut Code) {
+pub unsafe fn quirc_extract(q: *const Quirc, index: i32, code: &mut Code) {
     let qr: *const Grid = &*(*q).grids.as_ptr().offset(index as isize) as *const Grid;
     let mut i: i32 = 0;
     if index < 0 || index > (*q).count() as i32 {
         return;
     }
-    memset(code as *mut libc::c_void, 0, std::mem::size_of::<Code>());
-    perspective_map(
-        &(*qr).c,
-        0.0,
-        0.0,
-        &mut *(*code).corners.as_mut_ptr().offset(0),
-    );
+    code.clear();
+
+    perspective_map(&(*qr).c, 0.0, 0.0, &mut (*code).corners[0]);
     perspective_map(
         &(*qr).c,
         (*qr).grid_size as f64,
         0.0,
-        &mut *(*code).corners.as_mut_ptr().offset(1),
+        &mut (*code).corners[1],
     );
     perspective_map(
         &(*qr).c,
         (*qr).grid_size as f64,
         (*qr).grid_size as f64,
-        &mut *(*code).corners.as_mut_ptr().offset(2),
+        &mut (*code).corners[2],
     );
     perspective_map(
         &(*qr).c,
-        0.0f64,
+        0.0,
         (*qr).grid_size as f64,
-        &mut *(*code).corners.as_mut_ptr().offset(3),
+        &mut (*code).corners[3],
     );
     (*code).size = (*qr).grid_size;
-    let mut y = 0;
-    while y < (*qr).grid_size {
-        let mut x = 0;
-        while x < (*qr).grid_size {
+
+    for y in 0..(*qr).grid_size {
+        for x in 0..(*qr).grid_size {
             if read_cell(q, index, x, y) > 0 {
                 (*code).cell_bitmap[(i >> 3) as usize] =
                     ((*code).cell_bitmap[(i >> 3) as usize] as i32 | 1 << (i & 7)) as u8
             }
             i += 1;
-            x += 1
         }
-        y += 1
     }
 }
