@@ -89,7 +89,7 @@ fn poly_add(dst: &mut [u8], src: &[u8], c: u8, shift: i32, gf: &GaloisField) {
         let p = i + shift as usize;
         let v = src[i];
 
-        if p < 0 || p >= 64 {
+        if p >= 64 {
             continue;
         }
         if v == 0 {
@@ -621,7 +621,7 @@ fn decode_byte(mut data: &mut Data, ds: &mut Datastream) -> quirc_decode_error_t
         return QUIRC_ERROR_DATA_UNDERFLOW;
     }
 
-    for i in 0..count {
+    for _i in 0..count {
         let len = data.payload_len;
         data.payload_len = data.payload_len + 1;
         data.payload[len as usize] = take_bits(ds, 8) as u8;

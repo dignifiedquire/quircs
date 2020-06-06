@@ -115,18 +115,20 @@ fn perspective_unmap(c: &[f64; 8], in_0: &Point, u: &mut f64, v: &mut f64) {
 
 const FLOOD_FILL_MAX_DEPTH: i32 = 4096;
 
-pub type span_func_t = Option<unsafe fn(_: *mut libc::c_void, _: i32, _: i32, _: i32) -> ()>;
+fn noop(_: *mut libc::c_void, _: i32, _: i32, _: i32) {}
 
-unsafe fn flood_fill_seed(
+unsafe fn flood_fill_seed<F>(
     q: *mut Quirc,
     x: i32,
     y: i32,
     from: i32,
     to: i32,
-    func: span_func_t,
+    func: Option<&F>,
     user_data: *mut libc::c_void,
     depth: i32,
-) {
+) where
+    F: Fn(*mut libc::c_void, i32, i32, i32),
+{
     let mut left: i32 = x;
     let mut right: i32 = x;
     let mut row: *mut Pixel = (*q)
@@ -186,11 +188,6 @@ unsafe fn otsu(q: *const Quirc) -> u8 {
     let numPixels = (*q).w * (*q).h;
     // Calculate histogram
     let mut histogram: [libc::c_uint; 256] = [0; 256];
-    memset(
-        histogram.as_mut_ptr() as *mut libc::c_void,
-        0,
-        std::mem::size_of::<[libc::c_uint; 256]>(),
-    );
     let mut ptr = (*q).image.as_ptr();
     let mut length = numPixels;
     loop {
@@ -242,8 +239,10 @@ unsafe fn otsu(q: *const Quirc) -> u8 {
     return threshold;
 }
 
-unsafe fn area_count(user_data: *mut libc::c_void, _y: i32, left: i32, right: i32) {
-    (*(user_data as *mut Region)).count += right - left + 1;
+fn area_count(user_data: *mut libc::c_void, _y: i32, left: i32, right: i32) {
+    unsafe {
+        (*(user_data as *mut Region)).count += right - left + 1;
+    }
 }
 
 unsafe fn region_code(q: *mut Quirc, x: i32, y: i32) -> i32 {
@@ -278,7 +277,7 @@ unsafe fn region_code(q: *mut Quirc, x: i32, y: i32) -> i32 {
         y,
         pixel,
         region,
-        Some(area_count as unsafe fn(_: *mut libc::c_void, _: i32, _: i32, _: i32) -> ()),
+        Some(&area_count),
         &mut (*q).regions[region as usize] as *mut _ as *mut libc::c_void,
         0,
     );
@@ -286,42 +285,46 @@ unsafe fn region_code(q: *mut Quirc, x: i32, y: i32) -> i32 {
     return region;
 }
 
-unsafe fn find_one_corner(user_data: *mut libc::c_void, y: i32, left: i32, right: i32) {
-    let xs: [i32; 2] = [left, right];
-    let mut psd = user_data as *mut PolygonScoreData;
-    let dy: i32 = y - (*psd).ref_0.y;
+fn find_one_corner(user_data: *mut libc::c_void, y: i32, left: i32, right: i32) {
+    unsafe {
+        let xs: [i32; 2] = [left, right];
+        let mut psd = user_data as *mut PolygonScoreData;
+        let dy: i32 = y - (*psd).ref_0.y;
 
-    let mut i = 0;
-    while i < 2 {
-        let dx: i32 = xs[i as usize] - (*psd).ref_0.x;
-        let d: i32 = dx * dx + dy * dy;
-        if d > (*psd).scores[0] {
-            (*psd).scores[0] = d;
-            (*(*psd).corners.offset(0)).x = xs[i as usize];
-            (*(*psd).corners.offset(0)).y = y
+        let mut i = 0;
+        while i < 2 {
+            let dx: i32 = xs[i as usize] - (*psd).ref_0.x;
+            let d: i32 = dx * dx + dy * dy;
+            if d > (*psd).scores[0] {
+                (*psd).scores[0] = d;
+                (*(*psd).corners.offset(0)).x = xs[i as usize];
+                (*(*psd).corners.offset(0)).y = y
+            }
+            i += 1
         }
-        i += 1
     }
 }
 
-unsafe fn find_other_corners(user_data: *mut libc::c_void, y: i32, left: i32, right: i32) {
-    let xs: [i32; 2] = [left, right];
-    let mut psd = user_data as *mut PolygonScoreData;
-    let mut i = 0;
-    while i < 2 {
-        let up: i32 = xs[i as usize] * (*psd).ref_0.x + y * (*psd).ref_0.y;
-        let right_0: i32 = xs[i as usize] * -(*psd).ref_0.y + y * (*psd).ref_0.x;
-        let scores: [i32; 4] = [up, right_0, -up, -right_0];
-        let mut j = 0;
-        while j < 4 {
-            if scores[j as usize] > (*psd).scores[j as usize] {
-                (*psd).scores[j as usize] = scores[j as usize];
-                (*(*psd).corners.offset(j as isize)).x = xs[i as usize];
-                (*(*psd).corners.offset(j as isize)).y = y
+fn find_other_corners(user_data: *mut libc::c_void, y: i32, left: i32, right: i32) {
+    unsafe {
+        let xs: [i32; 2] = [left, right];
+        let mut psd = user_data as *mut PolygonScoreData;
+        let mut i = 0;
+        while i < 2 {
+            let up: i32 = xs[i as usize] * (*psd).ref_0.x + y * (*psd).ref_0.y;
+            let right_0: i32 = xs[i as usize] * -(*psd).ref_0.y + y * (*psd).ref_0.x;
+            let scores: [i32; 4] = [up, right_0, -up, -right_0];
+            let mut j = 0;
+            while j < 4 {
+                if scores[j as usize] > (*psd).scores[j as usize] {
+                    (*psd).scores[j as usize] = scores[j as usize];
+                    (*(*psd).corners.offset(j as isize)).x = xs[i as usize];
+                    (*(*psd).corners.offset(j as isize)).y = y
+                }
+                j += 1
             }
-            j += 1
+            i += 1
         }
-        i += 1
     }
 }
 
@@ -330,14 +333,9 @@ unsafe fn find_region_corners(q: *mut Quirc, rcode: i32, ref_0: *const Point, co
     let mut psd: PolygonScoreData = PolygonScoreData {
         ref_0: Point { x: 0, y: 0 },
         scores: [0; 4],
-        corners: 0 as *mut Point,
+        corners,
     };
-    memset(
-        &mut psd as *mut PolygonScoreData as *mut libc::c_void,
-        0,
-        std::mem::size_of::<PolygonScoreData>(),
-    );
-    psd.corners = corners;
+
     memcpy(
         &mut psd.ref_0 as *mut Point as *mut libc::c_void,
         ref_0 as *const libc::c_void,
@@ -350,7 +348,7 @@ unsafe fn find_region_corners(q: *mut Quirc, rcode: i32, ref_0: *const Point, co
         (*region).seed.y,
         rcode,
         1,
-        Some(find_one_corner as unsafe fn(_: *mut libc::c_void, _: i32, _: i32, _: i32) -> ()),
+        Some(&find_one_corner),
         &mut psd as *mut _ as *mut libc::c_void,
         0,
     );
@@ -377,7 +375,7 @@ unsafe fn find_region_corners(q: *mut Quirc, rcode: i32, ref_0: *const Point, co
         (*region).seed.y,
         1,
         rcode,
-        Some(find_other_corners as unsafe fn(_: *mut libc::c_void, _: i32, _: i32, _: i32) -> ()),
+        Some(&find_other_corners),
         &mut psd as *mut _ as *mut libc::c_void,
         0,
     );
@@ -451,11 +449,6 @@ unsafe fn finder_scan(q: *mut Quirc, y: i32) {
     let mut run_length: i32 = 0;
     let mut run_count: i32 = 0;
     let mut pb: [i32; 5] = [0; 5];
-    memset(
-        pb.as_mut_ptr() as *mut libc::c_void,
-        0,
-        std::mem::size_of::<[i32; 5]>(),
-    );
     let mut x = 0;
     while x < (*q).w {
         let color: i32 = if *row.offset(x as isize) as i32 != 0 {
@@ -559,18 +552,20 @@ unsafe fn find_alignment_pattern(q: *mut Quirc, index: i32) {
     }
 }
 
-unsafe fn find_leftmost_to_line(user_data: *mut libc::c_void, y: i32, left: i32, right: i32) {
-    let xs: [i32; 2] = [left, right];
-    let mut psd: *mut PolygonScoreData = user_data as *mut PolygonScoreData;
-    let mut i = 0;
-    while i < 2 {
-        let d: i32 = -(*psd).ref_0.y * xs[i as usize] + (*psd).ref_0.x * y;
-        if d < (*psd).scores[0] {
-            (*psd).scores[0] = d;
-            (*(*psd).corners.offset(0)).x = xs[i as usize];
-            (*(*psd).corners.offset(0)).y = y
+fn find_leftmost_to_line(user_data: *mut libc::c_void, y: i32, left: i32, right: i32) {
+    unsafe {
+        let xs: [i32; 2] = [left, right];
+        let mut psd: *mut PolygonScoreData = user_data as *mut PolygonScoreData;
+        let mut i = 0;
+        while i < 2 {
+            let d: i32 = -(*psd).ref_0.y * xs[i as usize] + (*psd).ref_0.x * y;
+            if d < (*psd).scores[0] {
+                (*psd).scores[0] = d;
+                (*(*psd).corners.offset(0)).x = xs[i as usize];
+                (*(*psd).corners.offset(0)).y = y
+            }
+            i += 1
         }
-        i += 1
     }
 }
 
@@ -1069,7 +1064,7 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: i32, b: i32, mut c: i32) {
                     );
                     psd.corners = &mut (*qr).align;
                     psd.scores[0] = -hd.y * (*qr).align.x + hd.x * (*qr).align.y;
-                    flood_fill_seed(
+                    flood_fill_seed::<fn(*mut libc::c_void, i32, i32, i32) -> ()>(
                         q,
                         (*reg).seed.x,
                         (*reg).seed.y,
@@ -1085,10 +1080,7 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: i32, b: i32, mut c: i32) {
                         (*reg).seed.y,
                         1,
                         (*qr).align_region,
-                        Some(
-                            find_leftmost_to_line
-                                as unsafe fn(_: *mut libc::c_void, _: i32, _: i32, _: i32) -> (),
-                        ),
+                        Some(&find_leftmost_to_line),
                         &mut psd as *mut PolygonScoreData as *mut libc::c_void,
                         0,
                     );
