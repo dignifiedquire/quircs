@@ -1,18 +1,5 @@
-use libc;
-extern "C" {
-    #[no_mangle]
-    fn malloc(_: libc::c_ulong) -> *mut libc::c_void;
-    #[no_mangle]
-    fn calloc(_: libc::c_ulong, _: libc::c_ulong) -> *mut libc::c_void;
-    #[no_mangle]
-    fn free(_: *mut libc::c_void);
-    #[no_mangle]
-    fn memcpy(_: *mut libc::c_void, _: *const libc::c_void, _: libc::c_ulong) -> *mut libc::c_void;
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: libc::c_int, _: libc::c_ulong) -> *mut libc::c_void;
-}
-pub type __darwin_size_t = libc::c_ulong;
-pub type size_t = __darwin_size_t;
+use libc::{self, calloc, free, malloc, memcpy, memset};
+
 pub type uint8_t = libc::c_uchar;
 pub type uint16_t = libc::c_ushort;
 pub type uint32_t = libc::c_uint;
@@ -22,8 +9,8 @@ pub type uint32_t = libc::c_uint;
 pub struct Quirc {
     pub image: *mut uint8_t,
     pub pixels: *mut quirc_pixel_t,
-    pub w: libc::c_int,
-    pub h: libc::c_int,
+    pub w: usize,
+    pub h: usize,
     pub num_regions: libc::c_int,
     pub regions: [quirc_region; 65534],
     pub num_capstones: libc::c_int,
@@ -124,15 +111,11 @@ pub fn quirc_version() -> &'static str {
 /// Construct a new QR-code recognizer. This function will return NULL
 /// if sufficient memory could not be allocated.
 pub unsafe fn quirc_new() -> *mut Quirc {
-    let mut q: *mut Quirc = malloc(::std::mem::size_of::<Quirc>() as libc::c_ulong) as *mut Quirc;
+    let mut q: *mut Quirc = malloc(std::mem::size_of::<Quirc>()) as *mut Quirc;
     if q.is_null() {
         return 0 as *mut Quirc;
     }
-    memset(
-        q as *mut libc::c_void,
-        0i32,
-        ::std::mem::size_of::<Quirc>() as libc::c_ulong,
-    );
+    memset(q as *mut libc::c_void, 0i32, ::std::mem::size_of::<Quirc>());
     q
 }
 
@@ -151,34 +134,30 @@ pub unsafe fn quirc_destroy(mut q: *mut Quirc) {
 /// specified before codes can be analyzed.
 ///
 /// This function returns 0 on success, or -1 if sufficient memory could  not be allocated.
-pub unsafe fn quirc_resize(
-    mut q: *mut Quirc,
-    mut w: libc::c_int,
-    mut h: libc::c_int,
-) -> libc::c_int {
-    let mut olddim: size_t = 0;
-    let mut newdim: size_t = 0;
-    let mut min: size_t = 0;
+pub unsafe fn quirc_resize(mut q: *mut Quirc, mut w: usize, mut h: usize) -> libc::c_int {
+    let mut olddim: usize = 0;
+    let mut newdim: usize = 0;
+    let mut min: usize = 0;
     let mut current_block: u64;
     let mut image: *mut uint8_t = 0 as *mut uint8_t;
     let mut pixels: *mut quirc_pixel_t = 0 as *mut quirc_pixel_t;
     /*
-     * XXX: w and h should be size_t (or at least unsigned) as negatives
+     * XXX: w and h should be usize (or at least unsigned) as negatives
      * values would not make much sense. The downside is that it would break
      * both the API and ABI. Thus, at the moment, let's just do a sanity
      * check.
      */
-    if !(w < 0i32 || h < 0i32) {
+    if !(w < 0 || h < 0) {
         /*
          * alloc a new buffer for q->image. We avoid realloc(3) because we want
          * on failure to be leave `q` in a consistant, unmodified state.
          */
-        image = calloc(w as libc::c_ulong, h as libc::c_ulong) as *mut uint8_t;
+        image = calloc(w, h) as *mut uint8_t;
         if !image.is_null() {
             /* compute the "old" (i.e. currently allocated) and the "new"
             (i.e. requested) image dimensions */
-            olddim = ((*q).w * (*q).h) as size_t;
-            newdim = (w * h) as size_t;
+            olddim = ((*q).w * (*q).h) as usize;
+            newdim = (w * h) as usize;
             min = if olddim < newdim { olddim } else { newdim };
             /*
              * copy the data into the new buffer, avoiding (a) to read beyond the
@@ -192,10 +171,7 @@ pub unsafe fn quirc_resize(
             );
             /* alloc a new buffer for q->pixels if needed */
             if 0i32 == 0 {
-                pixels = calloc(
-                    newdim,
-                    ::std::mem::size_of::<quirc_pixel_t>() as libc::c_ulong,
-                ) as *mut quirc_pixel_t;
+                pixels = calloc(newdim, std::mem::size_of::<quirc_pixel_t>()) as *mut quirc_pixel_t;
                 if pixels.is_null() {
                     current_block = 11234461503687749102;
                 } else {

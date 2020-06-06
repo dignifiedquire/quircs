@@ -274,8 +274,8 @@ unsafe fn load_png(dec: *mut Quirc, path: &PathBuf) -> libc::c_int {
     let img = image::open(&path)
         .expect("failed to open image")
         .into_luma();
-    let width = img.width() as i32;
-    let height = img.height() as i32;
+    let width = img.width() as usize;
+    let height = img.height() as usize;
 
     assert!(quirc_resize(dec, width, height) > -1);
 

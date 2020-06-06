@@ -1,16 +1,8 @@
-use libc;
+use libc::{self, abs, memcpy, memset};
 
 use crate::quirc::*;
 use crate::version_db::*;
 
-extern "C" {
-    #[no_mangle]
-    fn memcpy(_: *mut libc::c_void, _: *const libc::c_void, _: libc::c_ulong) -> *mut libc::c_void;
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: libc::c_int, _: libc::c_ulong) -> *mut libc::c_void;
-    #[no_mangle]
-    fn abs(_: libc::c_int) -> libc::c_int;
-}
 pub type uint8_t = libc::c_uchar;
 pub type uint16_t = libc::c_ushort;
 pub type uint32_t = libc::c_uint;
@@ -688,12 +680,12 @@ unsafe fn berlekamp_massey(
     memset(
         B.as_mut_ptr() as *mut libc::c_void,
         0i32,
-        ::std::mem::size_of::<[uint8_t; 64]>() as libc::c_ulong,
+        std::mem::size_of::<[uint8_t; 64]>(),
     );
     memset(
         C.as_mut_ptr() as *mut libc::c_void,
         0i32,
-        ::std::mem::size_of::<[uint8_t; 64]>() as libc::c_ulong,
+        std::mem::size_of::<[uint8_t; 64]>(),
     );
     B[0] = 1i32 as uint8_t;
     C[0] = 1i32 as uint8_t;
@@ -728,13 +720,13 @@ unsafe fn berlekamp_massey(
             memcpy(
                 T.as_mut_ptr() as *mut libc::c_void,
                 C.as_mut_ptr() as *const libc::c_void,
-                ::std::mem::size_of::<[uint8_t; 64]>() as libc::c_ulong,
+                std::mem::size_of::<[uint8_t; 64]>(),
             );
             poly_add(C.as_mut_ptr(), B.as_mut_ptr(), mult, m, gf);
             memcpy(
                 B.as_mut_ptr() as *mut libc::c_void,
                 T.as_mut_ptr() as *const libc::c_void,
-                ::std::mem::size_of::<[uint8_t; 64]>() as libc::c_ulong,
+                std::mem::size_of::<[uint8_t; 64]>(),
             );
             L = n + 1i32 - L;
             b = d;
@@ -748,7 +740,7 @@ unsafe fn berlekamp_massey(
     memcpy(
         sigma as *mut libc::c_void,
         C.as_mut_ptr() as *const libc::c_void,
-        64i32 as libc::c_ulong,
+        64,
     );
 }
 /* ***********************************************************************
@@ -764,7 +756,7 @@ unsafe fn block_syndromes(
 ) -> libc::c_int {
     let mut nonzero: libc::c_int = 0i32;
     let mut i: libc::c_int = 0;
-    memset(s as *mut libc::c_void, 0i32, 64i32 as libc::c_ulong);
+    memset(s as *mut libc::c_void, 0, 64);
     i = 0i32;
     while i < npar {
         let mut j: libc::c_int = 0;
@@ -793,7 +785,7 @@ unsafe fn eloc_poly(
     mut npar: libc::c_int,
 ) {
     let mut i: libc::c_int = 0;
-    memset(omega as *mut libc::c_void, 0i32, 64i32 as libc::c_ulong);
+    memset(omega as *mut libc::c_void, 0i32, 64);
     i = 0i32;
     while i < npar {
         let a: uint8_t = *sigma.offset(i as isize);
@@ -835,11 +827,7 @@ unsafe fn correct_block(
     }
     berlekamp_massey(s.as_mut_ptr(), npar, &gf256, sigma.as_mut_ptr());
     /* Compute derivative of sigma */
-    memset(
-        sigma_deriv.as_mut_ptr() as *mut libc::c_void,
-        0i32,
-        64i32 as libc::c_ulong,
-    );
+    memset(sigma_deriv.as_mut_ptr() as *mut libc::c_void, 0, 64);
     i = 0i32;
     while i + 1i32 < 64i32 {
         sigma_deriv[i as usize] = sigma[(i + 1i32) as usize];
@@ -875,7 +863,7 @@ unsafe fn correct_block(
 unsafe fn format_syndromes(mut u: uint16_t, mut s: *mut uint8_t) -> libc::c_int {
     let mut i: libc::c_int = 0;
     let mut nonzero: libc::c_int = 0i32;
-    memset(s as *mut libc::c_void, 0i32, 64i32 as libc::c_ulong);
+    memset(s as *mut libc::c_void, 0, 64);
     i = 0i32;
     while i < 3i32 * 2i32 {
         let mut j: libc::c_int = 0;
@@ -1126,7 +1114,7 @@ unsafe fn codestream_ecc(
     memcpy(
         &mut lb_ecc as *mut quirc_rs_params as *mut libc::c_void,
         sb_ecc as *const libc::c_void,
-        ::std::mem::size_of::<quirc_rs_params>() as libc::c_ulong,
+        std::mem::size_of::<quirc_rs_params>(),
     );
     lb_ecc.dw += 1;
     lb_ecc.bs += 1;
@@ -1419,13 +1407,13 @@ pub unsafe fn quirc_decode(
     }
     memset(
         data as *mut libc::c_void,
-        0i32,
-        ::std::mem::size_of::<quirc_data>() as libc::c_ulong,
+        0,
+        std::mem::size_of::<quirc_data>(),
     );
     memset(
         &mut ds as *mut datastream as *mut libc::c_void,
-        0i32,
-        ::std::mem::size_of::<datastream>() as libc::c_ulong,
+        0,
+        std::mem::size_of::<datastream>(),
     );
     (*data).version = ((*code).size - 17i32) / 4i32;
     if (*data).version < 1i32 || (*data).version > 40i32 {

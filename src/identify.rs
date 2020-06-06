@@ -1,23 +1,7 @@
-use libc;
+use libc::{abs, memcpy, memmove, memset};
 
 use crate::quirc::*;
 use crate::version_db::*;
-
-extern "C" {
-    #[no_mangle]
-    fn memcpy(_: *mut libc::c_void, _: *const libc::c_void, _: libc::c_ulong) -> *mut libc::c_void;
-    #[no_mangle]
-    fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: libc::c_ulong)
-        -> *mut libc::c_void;
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: libc::c_int, _: libc::c_ulong) -> *mut libc::c_void;
-    #[no_mangle]
-    fn abs(_: libc::c_int) -> libc::c_int;
-    #[no_mangle]
-    fn fabs(_: libc::c_double) -> libc::c_double;
-    #[no_mangle]
-    fn rint(_: libc::c_double) -> libc::c_double;
-}
 
 pub type uint8_t = libc::c_uchar;
 pub type uint16_t = libc::c_ushort;
@@ -126,8 +110,8 @@ unsafe fn perspective_map(
     let mut den: libc::c_double = *c.offset(6) * u + *c.offset(7) * v + 1.0f64;
     let mut x: libc::c_double = (*c.offset(0) * u + *c.offset(1) * v + *c.offset(2)) / den;
     let mut y: libc::c_double = (*c.offset(3) * u + *c.offset(4) * v + *c.offset(5)) / den;
-    (*ret).x = rint(x) as libc::c_int;
-    (*ret).y = rint(y) as libc::c_int;
+    (*ret).x = x.round() as libc::c_int;
+    (*ret).y = y.round() as libc::c_int;
 }
 
 unsafe fn perspective_unmap(
@@ -173,14 +157,16 @@ unsafe fn flood_fill_seed(
     let mut left: libc::c_int = x;
     let mut right: libc::c_int = x;
     let mut i: libc::c_int = 0;
-    let mut row: *mut quirc_pixel_t = (*q).pixels.offset((y * (*q).w) as isize);
+    let mut row: *mut quirc_pixel_t = (*q).pixels.offset((y * (*q).w as libc::c_int) as isize);
     if depth >= FLOOD_FILL_MAX_DEPTH {
         return;
     }
     while left > 0i32 && *row.offset((left - 1i32) as isize) as libc::c_int == from {
         left -= 1
     }
-    while right < (*q).w - 1i32 && *row.offset((right + 1i32) as isize) as libc::c_int == from {
+    while right < (*q).w as libc::c_int - 1
+        && *row.offset((right + 1) as isize) as libc::c_int == from
+    {
         right += 1
     }
     /* Fill the extent */
@@ -194,17 +180,21 @@ unsafe fn flood_fill_seed(
     }
     /* Seed new flood-fills */
     if y > 0i32 {
-        row = (*q).pixels.offset(((y - 1i32) * (*q).w) as isize);
+        row = (*q)
+            .pixels
+            .offset(((y - 1) * (*q).w as libc::c_int) as isize);
         i = left;
         while i <= right {
             if *row.offset(i as isize) as libc::c_int == from {
-                flood_fill_seed(q, i, y - 1i32, from, to, func, user_data, depth + 1i32);
+                flood_fill_seed(q, i, y - 1, from, to, func, user_data, depth + 1);
             }
             i += 1
         }
     }
-    if y < (*q).h - 1i32 {
-        row = (*q).pixels.offset(((y + 1i32) * (*q).w) as isize);
+    if y < (*q).h as libc::c_int - 1 {
+        row = (*q)
+            .pixels
+            .offset(((y + 1i32) * (*q).w as libc::c_int) as isize);
         i = left;
         while i <= right {
             if *row.offset(i as isize) as libc::c_int == from {
@@ -218,16 +208,16 @@ unsafe fn flood_fill_seed(
 // --- Adaptive thresholding
 
 unsafe fn otsu(mut q: *const Quirc) -> uint8_t {
-    let mut numPixels: libc::c_int = (*q).w * (*q).h;
+    let mut numPixels = (*q).w * (*q).h;
     // Calculate histogram
     let mut histogram: [libc::c_uint; 256] = [0; 256];
     memset(
         histogram.as_mut_ptr() as *mut libc::c_void,
         0i32,
-        ::std::mem::size_of::<[libc::c_uint; 256]>() as libc::c_ulong,
+        std::mem::size_of::<[libc::c_uint; 256]>(),
     );
     let mut ptr: *mut uint8_t = (*q).image;
-    let mut length: libc::c_int = numPixels;
+    let mut length = numPixels;
     loop {
         let fresh0 = length;
         length = length - 1;
@@ -258,8 +248,8 @@ unsafe fn otsu(mut q: *const Quirc) -> uint8_t {
         q1 = (q1 as libc::c_uint).wrapping_add(histogram[i as usize]) as libc::c_int as libc::c_int;
         if !(q1 == 0i32) {
             // Weighted foreground
-            let q2: libc::c_int = numPixels - q1;
-            if q2 == 0i32 {
+            let q2 = numPixels as libc::c_int - q1;
+            if q2 == 0 {
                 break;
             }
             sumB = (sumB as libc::c_uint).wrapping_add(i.wrapping_mul(histogram[i as usize]))
@@ -293,10 +283,10 @@ unsafe fn region_code(mut q: *mut Quirc, mut x: libc::c_int, mut y: libc::c_int)
     let mut pixel: libc::c_int = 0;
     let mut box_0: *mut quirc_region = 0 as *mut quirc_region;
     let mut region: libc::c_int = 0;
-    if x < 0i32 || y < 0i32 || x >= (*q).w || y >= (*q).h {
+    if x < 0i32 || y < 0i32 || x >= (*q).w as libc::c_int || y >= (*q).h as libc::c_int {
         return -1i32;
     }
-    pixel = *(*q).pixels.offset((y * (*q).w + x) as isize) as libc::c_int;
+    pixel = *(*q).pixels.offset((y * (*q).w as libc::c_int + x) as isize) as libc::c_int;
     if pixel >= 2i32 {
         return pixel;
     }
@@ -313,7 +303,7 @@ unsafe fn region_code(mut q: *mut Quirc, mut x: libc::c_int, mut y: libc::c_int)
     memset(
         box_0 as *mut libc::c_void,
         0i32,
-        ::std::mem::size_of::<quirc_region>() as libc::c_ulong,
+        std::mem::size_of::<quirc_region>(),
     );
     (*box_0).seed.x = x;
     (*box_0).seed.y = y;
@@ -407,13 +397,13 @@ unsafe fn find_region_corners(
     memset(
         &mut psd as *mut polygon_score_data as *mut libc::c_void,
         0i32,
-        ::std::mem::size_of::<polygon_score_data>() as libc::c_ulong,
+        std::mem::size_of::<polygon_score_data>(),
     );
     psd.corners = corners;
     memcpy(
         &mut psd.ref_0 as *mut quirc_point as *mut libc::c_void,
         ref_0 as *const libc::c_void,
-        ::std::mem::size_of::<quirc_point>() as libc::c_ulong,
+        std::mem::size_of::<quirc_point>(),
     );
     psd.scores[0] = -1i32;
     flood_fill_seed(
@@ -441,7 +431,7 @@ unsafe fn find_region_corners(
         memcpy(
             &mut *psd.corners.offset(i as isize) as *mut quirc_point as *mut libc::c_void,
             &mut (*region).seed as *mut quirc_point as *const libc::c_void,
-            ::std::mem::size_of::<quirc_point>() as libc::c_ulong,
+            std::mem::size_of::<quirc_point>(),
         );
         i += 1
     }
@@ -488,7 +478,7 @@ unsafe fn record_capstone(mut q: *mut Quirc, mut ring: libc::c_int, mut stone: l
     memset(
         capstone as *mut libc::c_void,
         0i32,
-        ::std::mem::size_of::<quirc_capstone>() as libc::c_ulong,
+        std::mem::size_of::<quirc_capstone>(),
     );
     (*capstone).qr_grid = -1i32;
     (*capstone).ring = ring;
@@ -560,8 +550,7 @@ unsafe fn test_capstone(
 }
 
 unsafe fn finder_scan(mut q: *mut Quirc, mut y: libc::c_int) {
-    let mut row: *mut quirc_pixel_t = (*q).pixels.offset((y * (*q).w) as isize);
-    let mut x: libc::c_int = 0;
+    let mut row: *mut quirc_pixel_t = (*q).pixels.offset((y * (*q).w as libc::c_int) as isize);
     let mut last_color: libc::c_int = 0i32;
     let mut run_length: libc::c_int = 0i32;
     let mut run_count: libc::c_int = 0i32;
@@ -569,9 +558,9 @@ unsafe fn finder_scan(mut q: *mut Quirc, mut y: libc::c_int) {
     memset(
         pb.as_mut_ptr() as *mut libc::c_void,
         0i32,
-        ::std::mem::size_of::<[libc::c_int; 5]>() as libc::c_ulong,
+        std::mem::size_of::<[libc::c_int; 5]>(),
     );
-    x = 0i32;
+    let mut x = 0;
     while x < (*q).w {
         let mut color: libc::c_int = if *row.offset(x as isize) as libc::c_int != 0 {
             1i32
@@ -582,8 +571,7 @@ unsafe fn finder_scan(mut q: *mut Quirc, mut y: libc::c_int) {
             memmove(
                 pb.as_mut_ptr() as *mut libc::c_void,
                 pb.as_mut_ptr().offset(1) as *const libc::c_void,
-                (::std::mem::size_of::<libc::c_int>() as libc::c_ulong)
-                    .wrapping_mul(4i32 as libc::c_ulong),
+                (std::mem::size_of::<libc::c_int>()).wrapping_mul(4),
             );
             pb[4] = run_length;
             run_length = 0i32;
@@ -606,7 +594,7 @@ unsafe fn finder_scan(mut q: *mut Quirc, mut y: libc::c_int) {
                     i += 1
                 }
                 if ok != 0 {
-                    test_capstone(q, x, y, pb.as_mut_ptr());
+                    test_capstone(q, x as libc::c_int, y, pb.as_mut_ptr());
                 }
             }
         }
@@ -641,7 +629,7 @@ unsafe fn find_alignment_pattern(mut q: *mut Quirc, mut index: libc::c_int) {
     memcpy(
         &mut b as *mut quirc_point as *mut libc::c_void,
         &mut (*qr).align as *mut quirc_point as *const libc::c_void,
-        ::std::mem::size_of::<quirc_point>() as libc::c_ulong,
+        std::mem::size_of::<quirc_point>(),
     );
     /* Guess another two corners of the alignment pattern so that we
      * can estimate its size.
@@ -721,10 +709,18 @@ unsafe fn timing_scan(
     let mut i: libc::c_int = 0;
     let mut run_length: libc::c_int = 0i32;
     let mut count: libc::c_int = 0i32;
-    if (*p0).x < 0i32 || (*p0).y < 0i32 || (*p0).x >= (*q).w || (*p0).y >= (*q).h {
+    if (*p0).x < 0i32
+        || (*p0).y < 0i32
+        || (*p0).x >= (*q).w as libc::c_int
+        || (*p0).y >= (*q).h as libc::c_int
+    {
         return -1i32;
     }
-    if (*p1).x < 0i32 || (*p1).y < 0i32 || (*p1).x >= (*q).w || (*p1).y >= (*q).h {
+    if (*p1).x < 0i32
+        || (*p1).y < 0i32
+        || (*p1).x >= (*q).w as libc::c_int
+        || (*p1).y >= (*q).h as libc::c_int
+    {
         return -1i32;
     }
     if abs(n) > abs(d) {
@@ -751,13 +747,13 @@ unsafe fn timing_scan(
     }
     x = (*p0).x;
     y = (*p0).y;
-    i = 0i32;
+    i = 0;
     while i <= d {
         let mut pixel: libc::c_int = 0;
-        if y < 0i32 || y >= (*q).h || x < 0i32 || x >= (*q).w {
+        if y < 0i32 || y >= (*q).h as libc::c_int || x < 0 || x >= (*q).w as libc::c_int {
             break;
         }
-        pixel = *(*q).pixels.offset((y * (*q).w + x) as isize) as libc::c_int;
+        pixel = *(*q).pixels.offset((y * (*q).w as libc::c_int + x) as isize) as libc::c_int;
         if pixel != 0 {
             if run_length >= 2i32 {
                 count += 1
@@ -852,10 +848,14 @@ unsafe fn read_cell(
         y as libc::c_double + 0.5f64,
         &mut p,
     );
-    if p.y < 0i32 || p.y >= (*q).h || p.x < 0i32 || p.x >= (*q).w {
+    if p.y < 0i32 || p.y >= (*q).h as libc::c_int || p.x < 0i32 || p.x >= (*q).w as libc::c_int {
         return 0i32;
     }
-    return if *(*q).pixels.offset((p.y * (*q).w + p.x) as isize) as libc::c_int != 0 {
+    return if *(*q)
+        .pixels
+        .offset((p.y * (*q).w as libc::c_int + p.x) as isize) as libc::c_int
+        != 0
+    {
         1i32
     } else {
         -1i32
@@ -885,8 +885,16 @@ unsafe fn fitness_cell(
                 y as libc::c_double + offsets[v as usize],
                 &mut p,
             );
-            if !(p.y < 0i32 || p.y >= (*q).h || p.x < 0i32 || p.x >= (*q).w) {
-                if *(*q).pixels.offset((p.y * (*q).w + p.x) as isize) != 0 {
+            if !(p.y < 0i32
+                || p.y >= (*q).h as libc::c_int
+                || p.x < 0
+                || p.x >= (*q).w as libc::c_int)
+            {
+                if *(*q)
+                    .pixels
+                    .offset((p.y * (*q).w as libc::c_int + p.x) as isize)
+                    != 0
+                {
                     score += 1
                 } else {
                     score -= 1
@@ -1054,7 +1062,7 @@ unsafe fn setup_qr_perspective(mut q: *mut Quirc, mut index: libc::c_int) {
         .corners
         .as_mut_ptr()
         .offset(0) as *mut quirc_point as *const libc::c_void,
-        ::std::mem::size_of::<quirc_point>() as libc::c_ulong,
+        std::mem::size_of::<quirc_point>(),
     );
     memcpy(
         &mut *rect.as_mut_ptr().offset(1) as *mut quirc_point as *mut libc::c_void,
@@ -1065,12 +1073,12 @@ unsafe fn setup_qr_perspective(mut q: *mut Quirc, mut index: libc::c_int) {
         .corners
         .as_mut_ptr()
         .offset(0) as *mut quirc_point as *const libc::c_void,
-        ::std::mem::size_of::<quirc_point>() as libc::c_ulong,
+        std::mem::size_of::<quirc_point>(),
     );
     memcpy(
         &mut *rect.as_mut_ptr().offset(2) as *mut quirc_point as *mut libc::c_void,
         &mut (*qr).align as *mut quirc_point as *const libc::c_void,
-        ::std::mem::size_of::<quirc_point>() as libc::c_ulong,
+        std::mem::size_of::<quirc_point>(),
     );
     memcpy(
         &mut *rect.as_mut_ptr().offset(3) as *mut quirc_point as *mut libc::c_void,
@@ -1081,7 +1089,7 @@ unsafe fn setup_qr_perspective(mut q: *mut Quirc, mut index: libc::c_int) {
         .corners
         .as_mut_ptr()
         .offset(0) as *mut quirc_point as *const libc::c_void,
-        ::std::mem::size_of::<quirc_point>() as libc::c_ulong,
+        std::mem::size_of::<quirc_point>(),
     );
     perspective_setup(
         (*qr).c.as_mut_ptr(),
@@ -1124,14 +1132,14 @@ unsafe fn rotate_capstone(
                 .as_mut_ptr()
                 .offset(((j + best) % 4i32) as isize) as *mut quirc_point
                 as *const libc::c_void,
-            ::std::mem::size_of::<quirc_point>() as libc::c_ulong,
+            std::mem::size_of::<quirc_point>(),
         );
         j += 1
     }
     memcpy(
         (*cap).corners.as_mut_ptr() as *mut libc::c_void,
         copy.as_mut_ptr() as *const libc::c_void,
-        ::std::mem::size_of::<[quirc_point; 4]>() as libc::c_ulong,
+        std::mem::size_of::<[quirc_point; 4]>(),
     );
     perspective_setup(
         (*cap).c.as_mut_ptr(),
@@ -1161,7 +1169,7 @@ unsafe fn record_qr_grid(
         &mut h0 as *mut quirc_point as *mut libc::c_void,
         &mut (*(*q).capstones.as_mut_ptr().offset(a as isize)).center as *mut quirc_point
             as *const libc::c_void,
-        ::std::mem::size_of::<quirc_point>() as libc::c_ulong,
+        std::mem::size_of::<quirc_point>(),
     );
     hd.x = (*q).capstones[c as usize].center.x - (*q).capstones[a as usize].center.x;
     hd.y = (*q).capstones[c as usize].center.y - (*q).capstones[a as usize].center.y;
@@ -1184,7 +1192,7 @@ unsafe fn record_qr_grid(
     memset(
         qr as *mut libc::c_void,
         0i32,
-        ::std::mem::size_of::<quirc_grid>() as libc::c_ulong,
+        std::mem::size_of::<quirc_grid>(),
     );
     (*qr).caps[0] = a;
     (*qr).caps[1] = b;
@@ -1253,12 +1261,12 @@ unsafe fn record_qr_grid(
                     memcpy(
                         &mut (*qr).align as *mut quirc_point as *mut libc::c_void,
                         &mut (*reg).seed as *mut quirc_point as *const libc::c_void,
-                        ::std::mem::size_of::<quirc_point>() as libc::c_ulong,
+                        std::mem::size_of::<quirc_point>(),
                     );
                     memcpy(
                         &mut psd.ref_0 as *mut quirc_point as *mut libc::c_void,
                         &mut hd as *mut quirc_point as *const libc::c_void,
-                        ::std::mem::size_of::<quirc_point>() as libc::c_ulong,
+                        std::mem::size_of::<quirc_point>(),
                     );
                     psd.corners = &mut (*qr).align;
                     psd.scores[0] = -hd.y * (*qr).align.x + hd.x * (*qr).align.y;
@@ -1327,7 +1335,7 @@ unsafe fn test_neighbours(
                 &*(*hlist).n.as_ptr().offset(j as isize) as *const neighbour;
             let mut vn: *const neighbour =
                 &*(*vlist).n.as_ptr().offset(k as isize) as *const neighbour;
-            let mut score: libc::c_double = fabs(1.0f64 - (*hn).distance / (*vn).distance);
+            let mut score: libc::c_double = (1.0f64 - (*hn).distance / (*vn).distance).abs();
             if !(score > 2.5f64) {
                 if best_h < 0i32 || score < best_score {
                     best_h = (*hn).index;
@@ -1378,8 +1386,8 @@ unsafe fn test_grouping(mut q: *mut Quirc, mut i: libc::c_int) {
         let mut v: libc::c_double = 0.;
         if !(i == j || (*c2).qr_grid >= 0i32) {
             perspective_unmap((*c1).c.as_mut_ptr(), &mut (*c2).center, &mut u, &mut v);
-            u = fabs(u - 3.5f64);
-            v = fabs(v - 3.5f64);
+            u = (u - 3.5f64).abs();
+            v = (v - 3.5f64).abs();
             if u < 0.2f64 * v {
                 let fresh5 = hlist.count;
                 hlist.count = hlist.count + 1;
@@ -1408,7 +1416,7 @@ unsafe fn test_grouping(mut q: *mut Quirc, mut i: libc::c_int) {
 unsafe fn pixels_setup(mut q: *mut Quirc, mut threshold: uint8_t) {
     let mut source: *mut uint8_t = (*q).image;
     let mut dest: *mut quirc_pixel_t = (*q).pixels;
-    let mut length: libc::c_int = (*q).w * (*q).h;
+    let mut length = (*q).w * (*q).h;
     loop {
         let fresh7 = length;
         length = length - 1;
@@ -1440,10 +1448,10 @@ pub unsafe fn quirc_begin(
     (*q).num_capstones = 0i32;
     (*q).num_grids = 0i32;
     if !w.is_null() {
-        *w = (*q).w
+        *w = (*q).w as libc::c_int;
     }
     if !h.is_null() {
-        *h = (*q).h
+        *h = (*q).h as libc::c_int;
     }
     return (*q).image;
 }
@@ -1452,18 +1460,17 @@ pub unsafe fn quirc_begin(
 /// the image for QR-code recognition. The locations and content of each
 /// code may be obtained using accessor functions described below.
 pub unsafe fn quirc_end(mut q: *mut Quirc) {
-    let mut i: libc::c_int = 0;
     let mut threshold: uint8_t = otsu(q);
     pixels_setup(q, threshold);
-    i = 0i32;
+    let mut i = 0;
     while i < (*q).h {
-        finder_scan(q, i);
-        i += 1
+        finder_scan(q, i as libc::c_int);
+        i += 1;
     }
-    i = 0i32;
-    while i < (*q).num_capstones {
-        test_grouping(q, i);
-        i += 1
+    i = 0;
+    while i < (*q).num_capstones as usize {
+        test_grouping(q, i as libc::c_int);
+        i += 1;
     }
 }
 /// Extract the QR-code specified by the given index.
@@ -1482,7 +1489,7 @@ pub unsafe fn quirc_extract(
     memset(
         code as *mut libc::c_void,
         0i32,
-        ::std::mem::size_of::<quirc_code>() as libc::c_ulong,
+        std::mem::size_of::<quirc_code>(),
     );
     perspective_map(
         (*qr).c.as_ptr(),
