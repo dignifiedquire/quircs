@@ -4,7 +4,6 @@ use crate::quirc::*;
 use crate::version_db::*;
 
 pub type uint8_t = libc::c_uchar;
-pub type uint16_t = libc::c_ushort;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -156,7 +155,6 @@ unsafe fn flood_fill_seed(
 ) {
     let mut left: libc::c_int = x;
     let mut right: libc::c_int = x;
-    let mut i: libc::c_int = 0;
     let mut row: *mut quirc_pixel_t = (*q).pixels.offset((y * (*q).w as libc::c_int) as isize);
     if depth >= FLOOD_FILL_MAX_DEPTH {
         return;
@@ -170,7 +168,7 @@ unsafe fn flood_fill_seed(
         right += 1
     }
     /* Fill the extent */
-    i = left;
+    let mut i = left;
     while i <= right {
         *row.offset(i as isize) = to as quirc_pixel_t;
         i += 1
@@ -231,8 +229,7 @@ unsafe fn otsu(mut q: *const Quirc) -> uint8_t {
     }
     // Calculate weighted sum of histogram values
     let mut sum: libc::c_uint = 0i32 as libc::c_uint;
-    let mut i: libc::c_uint = 0i32 as libc::c_uint;
-    i = 0i32 as libc::c_uint;
+    let mut i = 0i32 as libc::c_uint;
     while i <= 255i32 as libc::c_uint {
         sum = sum.wrapping_add(i.wrapping_mul(histogram[i as usize]));
         i = i.wrapping_add(1)
@@ -280,13 +277,10 @@ unsafe fn area_count(
 }
 
 unsafe fn region_code(mut q: *mut Quirc, mut x: libc::c_int, mut y: libc::c_int) -> libc::c_int {
-    let mut pixel: libc::c_int = 0;
-    let mut box_0: *mut quirc_region = 0 as *mut quirc_region;
-    let mut region: libc::c_int = 0;
     if x < 0i32 || y < 0i32 || x >= (*q).w as libc::c_int || y >= (*q).h as libc::c_int {
         return -1i32;
     }
-    pixel = *(*q).pixels.offset((y * (*q).w as libc::c_int + x) as isize) as libc::c_int;
+    let mut pixel = *(*q).pixels.offset((y * (*q).w as libc::c_int + x) as isize) as libc::c_int;
     if pixel >= 2i32 {
         return pixel;
     }
@@ -296,10 +290,10 @@ unsafe fn region_code(mut q: *mut Quirc, mut x: libc::c_int, mut y: libc::c_int)
     if (*q).num_regions >= 65534i32 {
         return -1i32;
     }
-    region = (*q).num_regions;
+    let region = (*q).num_regions;
     let fresh2 = (*q).num_regions;
     (*q).num_regions = (*q).num_regions + 1;
-    box_0 = &mut *(*q).regions.as_mut_ptr().offset(fresh2 as isize) as *mut quirc_region;
+    let box_0 = &mut *(*q).regions.as_mut_ptr().offset(fresh2 as isize) as *mut quirc_region;
     memset(
         box_0 as *mut libc::c_void,
         0i32,
@@ -338,8 +332,7 @@ unsafe fn find_one_corner(
     let mut psd: *mut polygon_score_data = user_data as *mut polygon_score_data;
     let mut xs: [libc::c_int; 2] = [left, right];
     let mut dy: libc::c_int = y - (*psd).ref_0.y;
-    let mut i: libc::c_int = 0;
-    i = 0i32;
+    let mut i = 0i32;
     while i < 2i32 {
         let mut dx: libc::c_int = xs[i as usize] - (*psd).ref_0.x;
         let mut d: libc::c_int = dx * dx + dy * dy;
@@ -360,14 +353,12 @@ unsafe fn find_other_corners(
 ) {
     let mut psd: *mut polygon_score_data = user_data as *mut polygon_score_data;
     let mut xs: [libc::c_int; 2] = [left, right];
-    let mut i: libc::c_int = 0;
-    i = 0i32;
+    let mut i = 0i32;
     while i < 2i32 {
         let mut up: libc::c_int = xs[i as usize] * (*psd).ref_0.x + y * (*psd).ref_0.y;
         let mut right_0: libc::c_int = xs[i as usize] * -(*psd).ref_0.y + y * (*psd).ref_0.x;
         let mut scores: [libc::c_int; 4] = [up, right_0, -up, -right_0];
-        let mut j: libc::c_int = 0;
-        j = 0i32;
+        let mut j = 0i32;
         while j < 4i32 {
             if scores[j as usize] > (*psd).scores[j as usize] {
                 (*psd).scores[j as usize] = scores[j as usize];
@@ -393,7 +384,6 @@ unsafe fn find_region_corners(
         scores: [0; 4],
         corners: 0 as *mut quirc_point,
     };
-    let mut i: libc::c_int = 0;
     memset(
         &mut psd as *mut polygon_score_data as *mut libc::c_void,
         0i32,
@@ -426,7 +416,7 @@ unsafe fn find_region_corners(
     );
     psd.ref_0.x = (*psd.corners.offset(0)).x - psd.ref_0.x;
     psd.ref_0.y = (*psd.corners.offset(0)).y - psd.ref_0.y;
-    i = 0i32;
+    let mut i = 0i32;
     while i < 4i32 {
         memcpy(
             &mut *psd.corners.offset(i as isize) as *mut quirc_point as *mut libc::c_void,
@@ -466,15 +456,13 @@ unsafe fn record_capstone(mut q: *mut Quirc, mut ring: libc::c_int, mut stone: l
         &mut *(*q).regions.as_mut_ptr().offset(stone as isize) as *mut quirc_region;
     let mut ring_reg: *mut quirc_region =
         &mut *(*q).regions.as_mut_ptr().offset(ring as isize) as *mut quirc_region;
-    let mut capstone: *mut quirc_capstone = 0 as *mut quirc_capstone;
-    let mut cs_index: libc::c_int = 0;
     if (*q).num_capstones >= 32i32 {
         return;
     }
-    cs_index = (*q).num_capstones;
+    let cs_index = (*q).num_capstones;
     let fresh3 = (*q).num_capstones;
     (*q).num_capstones = (*q).num_capstones + 1;
-    capstone = &mut *(*q).capstones.as_mut_ptr().offset(fresh3 as isize) as *mut quirc_capstone;
+    let capstone = &mut *(*q).capstones.as_mut_ptr().offset(fresh3 as isize) as *mut quirc_capstone;
     memset(
         capstone as *mut libc::c_void,
         0i32,
@@ -521,9 +509,6 @@ unsafe fn test_capstone(
         x - *pb.offset(4) - *pb.offset(3) - *pb.offset(2) - *pb.offset(1) - *pb.offset(0),
         y,
     );
-    let mut stone_reg: *mut quirc_region = 0 as *mut quirc_region;
-    let mut ring_reg: *mut quirc_region = 0 as *mut quirc_region;
-    let mut ratio: libc::c_int = 0;
     if ring_left < 0i32 || ring_right < 0i32 || stone < 0i32 {
         return;
     }
@@ -535,14 +520,14 @@ unsafe fn test_capstone(
     if ring_left == stone {
         return;
     }
-    stone_reg = &mut *(*q).regions.as_mut_ptr().offset(stone as isize) as *mut quirc_region;
-    ring_reg = &mut *(*q).regions.as_mut_ptr().offset(ring_left as isize) as *mut quirc_region;
+    let stone_reg = &mut *(*q).regions.as_mut_ptr().offset(stone as isize) as *mut quirc_region;
+    let ring_reg = &mut *(*q).regions.as_mut_ptr().offset(ring_left as isize) as *mut quirc_region;
     /* Already detected */
     if (*stone_reg).capstone >= 0i32 || (*ring_reg).capstone >= 0i32 {
         return;
     }
     /* Ratio should ideally be 37.5 */
-    ratio = (*stone_reg).count * 100i32 / (*ring_reg).count;
+    let ratio = (*stone_reg).count * 100i32 / (*ring_reg).count;
     if ratio < 10i32 || ratio > 70i32 {
         return;
     }
@@ -578,13 +563,10 @@ unsafe fn finder_scan(mut q: *mut Quirc, mut y: libc::c_int) {
             run_count += 1;
             if color == 0 && run_count >= 5i32 {
                 static mut check: [libc::c_int; 5] = [1i32, 1i32, 3i32, 1i32, 1i32];
-                let mut avg: libc::c_int = 0;
-                let mut err: libc::c_int = 0;
-                let mut i: libc::c_int = 0;
                 let mut ok: libc::c_int = 1i32;
-                avg = (pb[0] + pb[1] + pb[3] + pb[4]) / 4i32;
-                err = avg * 3i32 / 4i32;
-                i = 0i32;
+                let mut avg = (pb[0] + pb[1] + pb[3] + pb[4]) / 4i32;
+                let mut err = avg * 3i32 / 4i32;
+                let mut i = 0i32;
                 while i < 5i32 {
                     if pb[i as usize] < check[i as usize] * avg - err
                         || pb[i as usize] > check[i as usize] * avg + err
@@ -620,7 +602,6 @@ unsafe fn find_alignment_pattern(mut q: *mut Quirc, mut index: libc::c_int) {
     let mut a: quirc_point = quirc_point { x: 0, y: 0 };
     let mut b: quirc_point = quirc_point { x: 0, y: 0 };
     let mut c: quirc_point = quirc_point { x: 0, y: 0 };
-    let mut size_estimate: libc::c_int = 0;
     let mut step_size: libc::c_int = 1i32;
     let mut dir: libc::c_int = 0i32;
     let mut u: libc::c_double = 0.;
@@ -638,7 +619,7 @@ unsafe fn find_alignment_pattern(mut q: *mut Quirc, mut index: libc::c_int) {
     perspective_map((*c0).c.as_mut_ptr(), u, v + 1.0f64, &mut a);
     perspective_unmap((*c2).c.as_mut_ptr(), &mut b, &mut u, &mut v);
     perspective_map((*c2).c.as_mut_ptr(), u + 1.0f64, v, &mut c);
-    size_estimate = abs((a.x - b.x) * -(c.y - b.y) + (a.y - b.y) * (c.x - b.x));
+    let size_estimate = abs((a.x - b.x) * -(c.y - b.y) + (a.y - b.y) * (c.x - b.x));
     /* Spiral outwards from the estimate point until we find something
      * roughly the right size. Don't look too far from the estimate
      * point.
@@ -646,8 +627,7 @@ unsafe fn find_alignment_pattern(mut q: *mut Quirc, mut index: libc::c_int) {
     while step_size * step_size < size_estimate * 100i32 {
         static mut dx_map: [libc::c_int; 4] = [1i32, 0i32, -1i32, 0i32];
         static mut dy_map: [libc::c_int; 4] = [0i32, -1i32, 0i32, 1i32];
-        let mut i: libc::c_int = 0;
-        i = 0i32;
+        let mut i = 0i32;
         while i < step_size {
             let mut code: libc::c_int = region_code(q, b.x, b.y);
             if code >= 0i32 {
@@ -677,8 +657,7 @@ unsafe fn find_leftmost_to_line(
 ) {
     let mut psd: *mut polygon_score_data = user_data as *mut polygon_score_data;
     let mut xs: [libc::c_int; 2] = [left, right];
-    let mut i: libc::c_int = 0;
-    i = 0i32;
+    let mut i = 0i32;
     while i < 2i32 {
         let mut d: libc::c_int = -(*psd).ref_0.y * xs[i as usize] + (*psd).ref_0.x * y;
         if d < (*psd).scores[0] {
@@ -701,12 +680,11 @@ unsafe fn timing_scan(
     let mut d: libc::c_int = (*p1).y - (*p0).y;
     let mut x: libc::c_int = (*p0).x;
     let mut y: libc::c_int = (*p0).y;
-    let mut dom: *mut libc::c_int = 0 as *mut libc::c_int;
-    let mut nondom: *mut libc::c_int = 0 as *mut libc::c_int;
-    let mut dom_step: libc::c_int = 0;
-    let mut nondom_step: libc::c_int = 0;
+    let mut dom: *mut libc::c_int;
+    let mut nondom: *mut libc::c_int;
+    let mut dom_step: libc::c_int;
+    let mut nondom_step: libc::c_int;
     let mut a: libc::c_int = 0i32;
-    let mut i: libc::c_int = 0;
     let mut run_length: libc::c_int = 0i32;
     let mut count: libc::c_int = 0i32;
     if (*p0).x < 0i32
@@ -747,13 +725,12 @@ unsafe fn timing_scan(
     }
     x = (*p0).x;
     y = (*p0).y;
-    i = 0;
+    let mut i = 0;
     while i <= d {
-        let mut pixel: libc::c_int = 0;
         if y < 0i32 || y >= (*q).h as libc::c_int || x < 0 || x >= (*q).w as libc::c_int {
             break;
         }
-        pixel = *(*q).pixels.offset((y * (*q).w as libc::c_int + x) as isize) as libc::c_int;
+        let pixel = *(*q).pixels.offset((y * (*q).w as libc::c_int + x) as isize) as libc::c_int;
         if pixel != 0 {
             if run_length >= 2i32 {
                 count += 1
@@ -784,11 +761,7 @@ unsafe fn timing_scan(
 unsafe fn measure_timing_pattern(mut q: *mut Quirc, mut index: libc::c_int) -> libc::c_int {
     let mut qr: *mut quirc_grid =
         &mut *(*q).grids.as_mut_ptr().offset(index as isize) as *mut quirc_grid;
-    let mut i: libc::c_int = 0;
-    let mut scan: libc::c_int = 0;
-    let mut ver: libc::c_int = 0;
-    let mut size: libc::c_int = 0;
-    i = 0i32;
+    let mut i = 0i32;
     while i < 3i32 {
         static mut us: [libc::c_double; 3] = [6.5f64, 6.5f64, 0.5f64];
         static mut vs: [libc::c_double; 3] = [0.5f64, 6.5f64, 6.5f64];
@@ -815,7 +788,7 @@ unsafe fn measure_timing_pattern(mut q: *mut Quirc, mut index: libc::c_int) -> l
         &mut *(*qr).tpep.as_mut_ptr().offset(1),
         &mut *(*qr).tpep.as_mut_ptr().offset(0),
     );
-    scan = (*qr).hscan;
+    let mut scan = (*qr).hscan;
     if (*qr).vscan > scan {
         scan = (*qr).vscan
     }
@@ -824,8 +797,8 @@ unsafe fn measure_timing_pattern(mut q: *mut Quirc, mut index: libc::c_int) -> l
         return -1i32;
     }
     /* Choose the nearest allowable grid size */
-    size = scan * 2i32 + 13i32;
-    ver = (size - 15i32) / 4i32;
+    let size = scan * 2i32 + 13i32;
+    let ver = (size - 15i32) / 4i32;
     (*qr).grid_size = ver * 4i32 + 17i32;
     return 0i32;
 }
@@ -871,11 +844,9 @@ unsafe fn fitness_cell(
     let mut qr: *const quirc_grid =
         &*(*q).grids.as_ptr().offset(index as isize) as *const quirc_grid;
     let mut score: libc::c_int = 0i32;
-    let mut u: libc::c_int = 0;
-    let mut v: libc::c_int = 0;
-    v = 0i32;
+    let mut v = 0i32;
     while v < 3i32 {
-        u = 0i32;
+        let mut u = 0i32;
         while u < 3i32 {
             static mut offsets: [libc::c_double; 3] = [0.3f64, 0.5f64, 0.7f64];
             let mut p: quirc_point = quirc_point { x: 0, y: 0 };
@@ -914,9 +885,8 @@ unsafe fn fitness_ring(
     mut cy: libc::c_int,
     mut radius: libc::c_int,
 ) -> libc::c_int {
-    let mut i: libc::c_int = 0;
     let mut score: libc::c_int = 0i32;
-    i = 0i32;
+    let mut i = 0i32;
     while i < radius * 2i32 {
         score += fitness_cell(q, index, cx - radius + i, cy - radius);
         score += fitness_cell(q, index, cx - radius, cy + radius - i);
@@ -960,11 +930,8 @@ unsafe fn fitness_all(mut q: *const Quirc, mut index: libc::c_int) -> libc::c_in
     let mut info: *const quirc_version_info =
         &*quirc_version_db.as_ptr().offset(version as isize) as *const quirc_version_info;
     let mut score: libc::c_int = 0i32;
-    let mut i: libc::c_int = 0;
-    let mut j: libc::c_int = 0;
-    let mut ap_count: libc::c_int = 0;
     /* Check the timing pattern */
-    i = 0i32;
+    let mut i = 0i32;
     while i < (*qr).grid_size - 14i32 {
         let mut expect: libc::c_int = if i & 1i32 != 0 { 1i32 } else { -1i32 };
         score += fitness_cell(q, index, i + 7i32, 6i32) * expect;
@@ -979,7 +946,7 @@ unsafe fn fitness_all(mut q: *const Quirc, mut index: libc::c_int) -> libc::c_in
         return score;
     }
     /* Check alignment patterns */
-    ap_count = 0i32;
+    let mut ap_count = 0i32;
     while ap_count < 7i32 && (*info).apat[ap_count as usize] != 0 {
         ap_count += 1
     }
@@ -991,7 +958,7 @@ unsafe fn fitness_all(mut q: *const Quirc, mut index: libc::c_int) -> libc::c_in
     }
     i = 1i32;
     while i < ap_count {
-        j = 1i32;
+        let mut j = 1i32;
         while j < ap_count {
             score += fitness_apat(q, index, (*info).apat[i as usize], (*info).apat[j as usize]);
             j += 1
@@ -1005,30 +972,27 @@ unsafe fn jiggle_perspective(mut q: *mut Quirc, mut index: libc::c_int) {
     let mut qr: *mut quirc_grid =
         &mut *(*q).grids.as_mut_ptr().offset(index as isize) as *mut quirc_grid;
     let mut best: libc::c_int = fitness_all(q, index);
-    let mut pass: libc::c_int = 0;
     let mut adjustments: [libc::c_double; 8] = [0.; 8];
-    let mut i: libc::c_int = 0;
-    i = 0i32;
+    let mut i = 0i32;
     while i < 8i32 {
         adjustments[i as usize] = (*qr).c[i as usize] * 0.02f64;
         i += 1
     }
-    pass = 0i32;
+    let mut pass = 0i32;
     while pass < 5i32 {
         i = 0i32;
         while i < 16i32 {
             let mut j: libc::c_int = i >> 1i32;
-            let mut test: libc::c_int = 0;
             let mut old: libc::c_double = (*qr).c[j as usize];
             let mut step: libc::c_double = adjustments[j as usize];
-            let mut new: libc::c_double = 0.;
+            let mut new: libc::c_double;
             if i & 1i32 != 0 {
                 new = old + step
             } else {
                 new = old - step
             }
             (*qr).c[j as usize] = new;
-            test = fitness_all(q, index);
+            let mut test = fitness_all(q, index);
             if test > best {
                 best = test
             } else {
@@ -1108,10 +1072,9 @@ unsafe fn rotate_capstone(
     mut hd: *const quirc_point,
 ) {
     let mut copy: [quirc_point; 4] = [quirc_point { x: 0, y: 0 }; 4];
-    let mut j: libc::c_int = 0;
     let mut best: libc::c_int = 0i32;
     let mut best_score: libc::c_int = 2147483647i32;
-    j = 0i32;
+    let mut j = 0i32;
     while j < 4i32 {
         let mut p: *mut quirc_point =
             &mut *(*cap).corners.as_mut_ptr().offset(j as isize) as *mut quirc_point;
@@ -1156,9 +1119,6 @@ unsafe fn record_qr_grid(
 ) {
     let mut h0: quirc_point = quirc_point { x: 0, y: 0 };
     let mut hd: quirc_point = quirc_point { x: 0, y: 0 };
-    let mut i: libc::c_int = 0;
-    let mut qr_index: libc::c_int = 0;
-    let mut qr: *mut quirc_grid = 0 as *mut quirc_grid;
     if (*q).num_grids >= 8i32 {
         return;
     }
@@ -1185,10 +1145,10 @@ unsafe fn record_qr_grid(
         hd.y = -hd.y
     }
     /* Record the grid and its components */
-    qr_index = (*q).num_grids;
+    let qr_index = (*q).num_grids;
     let fresh4 = (*q).num_grids;
     (*q).num_grids = (*q).num_grids + 1;
-    qr = &mut *(*q).grids.as_mut_ptr().offset(fresh4 as isize) as *mut quirc_grid;
+    let qr = &mut *(*q).grids.as_mut_ptr().offset(fresh4 as isize) as *mut quirc_grid;
     memset(
         qr as *mut libc::c_void,
         0i32,
@@ -1201,7 +1161,7 @@ unsafe fn record_qr_grid(
     /* Rotate each capstone so that corner 0 is top-left with respect
      * to the grid.
      */
-    i = 0i32;
+    let mut i = 0i32;
     while i < 3i32 {
         let mut cap: *mut quirc_capstone = &mut *(*q)
             .capstones
@@ -1321,15 +1281,13 @@ unsafe fn test_neighbours(
     mut hlist: *const neighbour_list,
     mut vlist: *const neighbour_list,
 ) {
-    let mut j: libc::c_int = 0;
-    let mut k: libc::c_int = 0;
     let mut best_score: libc::c_double = 0.0f64;
     let mut best_h: libc::c_int = -1i32;
     let mut best_v: libc::c_int = -1i32;
     /* Test each possible grouping */
-    j = 0i32;
+    let mut j = 0i32;
     while j < (*hlist).count {
-        k = 0i32;
+        let mut k = 0i32;
         while k < (*vlist).count {
             let mut hn: *const neighbour =
                 &*(*hlist).n.as_ptr().offset(j as isize) as *const neighbour;
@@ -1355,7 +1313,6 @@ unsafe fn test_neighbours(
 unsafe fn test_grouping(mut q: *mut Quirc, mut i: libc::c_int) {
     let mut c1: *mut quirc_capstone =
         &mut *(*q).capstones.as_mut_ptr().offset(i as isize) as *mut quirc_capstone;
-    let mut j: libc::c_int = 0;
     let mut hlist: neighbour_list = neighbour_list {
         n: [neighbour {
             index: 0,
@@ -1378,7 +1335,7 @@ unsafe fn test_grouping(mut q: *mut Quirc, mut i: libc::c_int) {
     /* Look for potential neighbours by examining the relative gradients
      * from this capstone to others.
      */
-    j = 0i32;
+    let mut j = 0i32;
     while j < (*q).num_capstones {
         let mut c2: *mut quirc_capstone =
             &mut *(*q).capstones.as_mut_ptr().offset(j as isize) as *mut quirc_capstone;
@@ -1481,7 +1438,6 @@ pub unsafe fn quirc_extract(
 ) {
     let mut qr: *const quirc_grid =
         &*(*q).grids.as_ptr().offset(index as isize) as *const quirc_grid;
-    let mut y: libc::c_int = 0;
     let mut i: libc::c_int = 0i32;
     if index < 0i32 || index > (*q).num_grids {
         return;
@@ -1516,10 +1472,9 @@ pub unsafe fn quirc_extract(
         &mut *(*code).corners.as_mut_ptr().offset(3),
     );
     (*code).size = (*qr).grid_size;
-    y = 0i32;
+    let mut y = 0i32;
     while y < (*qr).grid_size {
-        let mut x: libc::c_int = 0;
-        x = 0i32;
+        let mut x = 0i32;
         while x < (*qr).grid_size {
             if read_cell(q, index, x, y) > 0i32 {
                 (*code).cell_bitmap[(i >> 3i32) as usize] =

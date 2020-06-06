@@ -20,7 +20,6 @@ pub struct quirc_version_info {
     pub ecc: [quirc_rs_params; 4],
 }
 
-#[no_mangle]
 pub static mut quirc_version_db: [quirc_version_info; 41] = [
     {
         let mut init = quirc_version_info {

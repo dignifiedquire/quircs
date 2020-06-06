@@ -135,11 +135,11 @@ pub unsafe fn quirc_destroy(mut q: *mut Quirc) {
 ///
 /// This function returns 0 on success, or -1 if sufficient memory could  not be allocated.
 pub unsafe fn quirc_resize(mut q: *mut Quirc, mut w: usize, mut h: usize) -> libc::c_int {
-    let mut olddim: usize = 0;
-    let mut newdim: usize = 0;
-    let mut min: usize = 0;
+    let mut olddim: usize;
+    let mut newdim: usize;
+    let mut min: usize;
     let mut current_block: u64;
-    let mut image: *mut uint8_t = 0 as *mut uint8_t;
+    let mut image: *mut uint8_t;
     let mut pixels: *mut quirc_pixel_t = 0 as *mut quirc_pixel_t;
     /*
      * XXX: w and h should be usize (or at least unsigned) as negatives
@@ -147,60 +147,60 @@ pub unsafe fn quirc_resize(mut q: *mut Quirc, mut w: usize, mut h: usize) -> lib
      * both the API and ABI. Thus, at the moment, let's just do a sanity
      * check.
      */
-    if !(w < 0 || h < 0) {
+
+    /*
+     * alloc a new buffer for q->image. We avoid realloc(3) because we want
+     * on failure to be leave `q` in a consistant, unmodified state.
+     */
+    image = calloc(w, h) as *mut uint8_t;
+    if !image.is_null() {
+        /* compute the "old" (i.e. currently allocated) and the "new"
+        (i.e. requested) image dimensions */
+        olddim = ((*q).w * (*q).h) as usize;
+        newdim = (w * h) as usize;
+        min = if olddim < newdim { olddim } else { newdim };
         /*
-         * alloc a new buffer for q->image. We avoid realloc(3) because we want
-         * on failure to be leave `q` in a consistant, unmodified state.
+         * copy the data into the new buffer, avoiding (a) to read beyond the
+         * old buffer when the new size is greater and (b) to write beyond the
+         * new buffer when the new size is smaller, hence the min computation.
          */
-        image = calloc(w, h) as *mut uint8_t;
-        if !image.is_null() {
-            /* compute the "old" (i.e. currently allocated) and the "new"
-            (i.e. requested) image dimensions */
-            olddim = ((*q).w * (*q).h) as usize;
-            newdim = (w * h) as usize;
-            min = if olddim < newdim { olddim } else { newdim };
-            /*
-             * copy the data into the new buffer, avoiding (a) to read beyond the
-             * old buffer when the new size is greater and (b) to write beyond the
-             * new buffer when the new size is smaller, hence the min computation.
-             */
-            memcpy(
-                image as *mut libc::c_void,
-                (*q).image as *const libc::c_void,
-                min,
-            );
-            /* alloc a new buffer for q->pixels if needed */
-            if 0i32 == 0 {
-                pixels = calloc(newdim, std::mem::size_of::<quirc_pixel_t>()) as *mut quirc_pixel_t;
-                if pixels.is_null() {
-                    current_block = 11234461503687749102;
-                } else {
-                    current_block = 13109137661213826276;
-                }
+        memcpy(
+            image as *mut libc::c_void,
+            (*q).image as *const libc::c_void,
+            min,
+        );
+        /* alloc a new buffer for q->pixels if needed */
+        if 0i32 == 0 {
+            pixels = calloc(newdim, std::mem::size_of::<quirc_pixel_t>()) as *mut quirc_pixel_t;
+            if pixels.is_null() {
+                current_block = 11234461503687749102;
             } else {
                 current_block = 13109137661213826276;
             }
-            match current_block {
-                11234461503687749102 => {}
-                _ => {
-                    /* alloc succeeded, update `q` with the new size and buffers */
-                    (*q).w = w;
-                    (*q).h = h;
-                    free((*q).image as *mut libc::c_void);
-                    (*q).image = image;
-                    if 0i32 == 0 {
-                        free((*q).pixels as *mut libc::c_void);
-                        (*q).pixels = pixels
-                    }
-                    return 0i32;
+        } else {
+            current_block = 13109137661213826276;
+        }
+        match current_block {
+            11234461503687749102 => {}
+            _ => {
+                /* alloc succeeded, update `q` with the new size and buffers */
+                (*q).w = w;
+                (*q).h = h;
+                free((*q).image as *mut libc::c_void);
+                (*q).image = image;
+                if 0i32 == 0 {
+                    free((*q).pixels as *mut libc::c_void);
+                    (*q).pixels = pixels
                 }
+                return 0i32;
             }
         }
     }
+
     /* NOTREACHED */
     free(image as *mut libc::c_void);
     free(pixels as *mut libc::c_void);
-    return -1i32;
+    -1i32
 }
 
 // Limits on the maximum size of QR-codes and their content.

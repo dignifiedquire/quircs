@@ -1,15 +1,12 @@
-#![allow(dead_code)]
 #![allow(mutable_transmutes)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
-#![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![feature(extern_types)]
 
 use libc;
 use quircs::*;
-use std::ffi::CStr;
 use std::path::PathBuf;
 
 extern "C" {
@@ -268,8 +265,6 @@ unsafe fn load_jpeg(dec: *mut Quirc, path: &PathBuf) -> libc::c_int {
 }
 
 unsafe fn load_png(dec: *mut Quirc, path: &PathBuf) -> libc::c_int {
-    use image::GenericImageView;
-
     println!("opening {}", path.display());
     let img = image::open(&path)
         .expect("failed to open image")
@@ -417,7 +412,6 @@ unsafe fn run_tests(paths: &[String]) -> libc::c_int {
         total_time: 0,
     };
     let mut count: libc::c_int = 0i32;
-    let mut i: libc::c_int = 0;
     decoder = quirc_new();
     assert!(!decoder.is_null(), "quirc_new");
 
@@ -454,7 +448,6 @@ unsafe fn run_tests(paths: &[String]) -> libc::c_int {
             add_result(&mut sum, &mut info);
             count += 1
         }
-        i += 1
     }
     if count > 1i32 {
         print_result(b"TOTAL\x00" as *const u8 as *const libc::c_char, &mut sum);
