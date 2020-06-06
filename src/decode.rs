@@ -646,7 +646,7 @@ fn decode_kanji(mut data: &mut Data, ds: &mut Datastream) -> quirc_decode_error_
         return QUIRC_ERROR_DATA_UNDERFLOW;
     }
 
-    for i in 0..count {
+    for _i in 0..count {
         let d = take_bits(ds, 13);
         let msB = d / 0xc0;
         let lsB = d % 0xc0;

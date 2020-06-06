@@ -1,25 +1,25 @@
-use libc::{abs, memcpy, memmove, memset};
+use libc::{memcpy, memmove, memset};
 
 use crate::quirc::*;
 use crate::version_db::*;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct neighbour {
+struct Neighbour {
     pub index: i32,
-    pub distance: libc::c_double,
+    pub distance: f64,
 }
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct neighbour_list {
-    pub n: [neighbour; 32],
+struct NeighbourList {
+    pub n: [Neighbour; 32],
     pub count: i32,
 }
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct polygon_score_data {
+struct PolygonScoreData {
     pub ref_0: Point,
     pub scores: [i32; 4],
     pub corners: *mut Point,
@@ -27,22 +27,19 @@ pub struct polygon_score_data {
 
 // ---  Linear algebra routines
 
-unsafe fn line_intersect(
-    p0: *const Point,
-    p1: *const Point,
-    q0: *const Point,
-    q1: *const Point,
-    mut r: *mut Point,
-) -> i32 {
+fn line_intersect(p0: &Point, p1: &Point, q0: &Point, q1: &Point, r: &mut Point) -> i32 {
     /* (a, b) is perpendicular to line p */
-    let a: i32 = -((*p1).y - (*p0).y);
-    let b: i32 = (*p1).x - (*p0).x;
+    let a = -(p1.y - p0.y);
+    let b = p1.x - p0.x;
+
     /* (c, d) is perpendicular to line q */
-    let c: i32 = -((*q1).y - (*q0).y);
-    let d: i32 = (*q1).x - (*q0).x;
+    let c = -(q1.y - q0.y);
+    let d = q1.x - q0.x;
+
     /* e and f are dot products of the respective vectors with p and q */
-    let e: i32 = a * (*p1).x + b * (*p1).y;
-    let f: i32 = c * (*q1).x + d * (*q1).y;
+    let e = a * p1.x + b * p1.y;
+    let f = c * q1.x + d * q1.y;
+
     /* Now we need to solve:
      *     [a b] [rx]   [e]
      *     [c d] [ry] = [f]
@@ -51,87 +48,67 @@ unsafe fn line_intersect(
      *       [ d -b] [e]   [rx]
      * 1/det [-c  a] [f] = [ry]
      */
-    let det: i32 = a * d - b * c;
+    let det = a * d - b * c;
     if det == 0 {
         return 0;
     }
-    (*r).x = (d * e - b * f) / det;
-    (*r).y = (-c * e + a * f) / det;
-    return 1;
+    r.x = (d * e - b * f) / det;
+    r.y = (-c * e + a * f) / det;
+
+    1
 }
 
-unsafe fn perspective_setup(
-    c: *mut libc::c_double,
-    rect: *const Point,
-    w: libc::c_double,
-    h: libc::c_double,
-) {
-    let x0: libc::c_double = (*rect.offset(0)).x as libc::c_double;
-    let y0: libc::c_double = (*rect.offset(0)).y as libc::c_double;
-    let x1: libc::c_double = (*rect.offset(1)).x as libc::c_double;
-    let y1: libc::c_double = (*rect.offset(1)).y as libc::c_double;
-    let x2: libc::c_double = (*rect.offset(2)).x as libc::c_double;
-    let y2: libc::c_double = (*rect.offset(2)).y as libc::c_double;
-    let x3: libc::c_double = (*rect.offset(3)).x as libc::c_double;
-    let y3: libc::c_double = (*rect.offset(3)).y as libc::c_double;
-    let wden: libc::c_double = w * (x2 * y3 - x3 * y2 + (x3 - x2) * y1 + x1 * (y2 - y3));
-    let hden: libc::c_double = h * (x2 * y3 + x1 * (y2 - y3) - x3 * y2 + (x3 - x2) * y1);
-    *c.offset(0) = (x1 * (x2 * y3 - x3 * y2)
+fn perspective_setup(c: &mut [f64; 8], rect: &[Point; 4], w: f64, h: f64) {
+    let x0 = rect[0].x as f64;
+    let y0 = rect[0].y as f64;
+    let x1 = rect[1].x as f64;
+    let y1 = rect[1].y as f64;
+    let x2 = rect[2].x as f64;
+    let y2 = rect[2].y as f64;
+    let x3 = rect[3].x as f64;
+    let y3 = rect[3].y as f64;
+
+    let wden = w * (x2 * y3 - x3 * y2 + (x3 - x2) * y1 + x1 * (y2 - y3));
+    let hden = h * (x2 * y3 + x1 * (y2 - y3) - x3 * y2 + (x3 - x2) * y1);
+
+    c[0] = (x1 * (x2 * y3 - x3 * y2)
         + x0 * (-x2 * y3 + x3 * y2 + (x2 - x3) * y1)
         + x1 * (x3 - x2) * y0)
         / wden;
-    *c.offset(1) = -(x0 * (x2 * y3 + x1 * (y2 - y3) - x2 * y1) - x1 * x3 * y2
+    c[1] = -(x0 * (x2 * y3 + x1 * (y2 - y3) - x2 * y1) - x1 * x3 * y2
         + x2 * x3 * y1
         + (x1 * x3 - x2 * x3) * y0)
         / hden;
-    *c.offset(2) = x0;
-    *c.offset(3) = (y0 * (x1 * (y3 - y2) - x2 * y3 + x3 * y2)
+    c[2] = x0;
+    c[3] = (y0 * (x1 * (y3 - y2) - x2 * y3 + x3 * y2)
         + y1 * (x2 * y3 - x3 * y2)
         + x0 * y1 * (y2 - y3))
         / wden;
-    *c.offset(4) = (x0 * (y1 * y3 - y2 * y3) + x1 * y2 * y3 - x2 * y1 * y3
+    c[4] = (x0 * (y1 * y3 - y2 * y3) + x1 * y2 * y3 - x2 * y1 * y3
         + y0 * (x3 * y2 - x1 * y2 + (x2 - x3) * y1))
         / hden;
-    *c.offset(5) = y0;
-    *c.offset(6) = (x1 * (y3 - y2) + x0 * (y2 - y3) + (x2 - x3) * y1 + (x3 - x2) * y0) / wden;
-    *c.offset(7) =
-        (-x2 * y3 + x1 * y3 + x3 * y2 + x0 * (y1 - y2) - x3 * y1 + (x2 - x1) * y0) / hden;
+    c[5] = y0;
+    c[6] = (x1 * (y3 - y2) + x0 * (y2 - y3) + (x2 - x3) * y1 + (x3 - x2) * y0) / wden;
+    c[7] = (-x2 * y3 + x1 * y3 + x3 * y2 + x0 * (y1 - y2) - x3 * y1 + (x2 - x1) * y0) / hden;
 }
 
-unsafe fn perspective_map(
-    c: *const libc::c_double,
-    u: libc::c_double,
-    v: libc::c_double,
-    mut ret: *mut Point,
-) {
-    let den: libc::c_double = *c.offset(6) * u + *c.offset(7) * v + 1.0f64;
-    let x: libc::c_double = (*c.offset(0) * u + *c.offset(1) * v + *c.offset(2)) / den;
-    let y: libc::c_double = (*c.offset(3) * u + *c.offset(4) * v + *c.offset(5)) / den;
-    (*ret).x = x.round() as i32;
-    (*ret).y = y.round() as i32;
+fn perspective_map(c: &[f64; 8], u: f64, v: f64, ret: &mut Point) {
+    let den = c[6] * u + c[7] * v + 1.0f64;
+    let x = (c[0] * u + c[1] * v + c[2]) / den;
+    let y = (c[3] * u + c[4] * v + c[5]) / den;
+
+    ret.x = x.round() as i32;
+    ret.y = y.round() as i32;
 }
 
-unsafe fn perspective_unmap(
-    c: *const libc::c_double,
-    in_0: *const Point,
-    u: *mut libc::c_double,
-    v: *mut libc::c_double,
-) {
-    let x: libc::c_double = (*in_0).x as libc::c_double;
-    let y: libc::c_double = (*in_0).y as libc::c_double;
-    let den: libc::c_double = -*c.offset(0) * *c.offset(7) * y
-        + *c.offset(1) * *c.offset(6) * y
-        + (*c.offset(3) * *c.offset(7) - *c.offset(4) * *c.offset(6)) * x
-        + *c.offset(0) * *c.offset(4)
-        - *c.offset(1) * *c.offset(3);
-    *u = -(*c.offset(1) * (y - *c.offset(5)) - *c.offset(2) * *c.offset(7) * y
-        + (*c.offset(5) * *c.offset(7) - *c.offset(4)) * x
-        + *c.offset(2) * *c.offset(4))
-        / den;
-    *v = (*c.offset(0) * (y - *c.offset(5)) - *c.offset(2) * *c.offset(6) * y
-        + (*c.offset(5) * *c.offset(6) - *c.offset(3)) * x
-        + *c.offset(2) * *c.offset(3))
-        / den;
+fn perspective_unmap(c: &[f64; 8], in_0: &Point, u: &mut f64, v: &mut f64) {
+    let x = in_0.x as f64;
+    let y = in_0.y as f64;
+
+    let den = -c[0] * c[7] * y + c[1] * c[6] * y + (c[3] * c[7] - c[4] * c[6]) * x + c[0] * c[4]
+        - c[1] * c[3];
+    *u = -(c[1] * (y - c[5]) - c[2] * c[7] * y + (c[5] * c[7] - c[4]) * x + c[2] * c[4]) / den;
+    *v = (c[0] * (y - c[5]) - c[2] * c[6] * y + (c[5] * c[6] - c[3]) * x + c[2] * c[3]) / den;
 }
 
 // --- Span-based floodfill routine
@@ -237,7 +214,7 @@ unsafe fn otsu(q: *const Quirc) -> u8 {
     // Compute threshold
     let mut sumB: i32 = 0;
     let mut q1: i32 = 0;
-    let mut max: libc::c_double = 0 as libc::c_double;
+    let mut max: f64 = 0 as f64;
     let mut threshold: u8 = 0 as u8;
     i = 0 as libc::c_uint;
     while i <= 255 as libc::c_uint {
@@ -251,12 +228,10 @@ unsafe fn otsu(q: *const Quirc) -> u8 {
             }
             sumB = (sumB as libc::c_uint).wrapping_add(i.wrapping_mul(histogram[i as usize])) as i32
                 as i32;
-            let m1: libc::c_double = sumB as libc::c_double / q1 as libc::c_double;
-            let m2: libc::c_double =
-                (sum as libc::c_double - sumB as libc::c_double) / q2 as libc::c_double;
-            let m1m2: libc::c_double = m1 - m2;
-            let variance: libc::c_double =
-                m1m2 * m1m2 * q1 as libc::c_double * q2 as libc::c_double;
+            let m1: f64 = sumB as f64 / q1 as f64;
+            let m2: f64 = (sum as f64 - sumB as f64) / q2 as f64;
+            let m1m2: f64 = m1 - m2;
+            let variance: f64 = m1m2 * m1m2 * q1 as f64 * q2 as f64;
             if variance >= max {
                 threshold = i as u8;
                 max = variance
@@ -312,9 +287,9 @@ unsafe fn region_code(q: *mut Quirc, x: i32, y: i32) -> i32 {
 }
 
 unsafe fn find_one_corner(user_data: *mut libc::c_void, y: i32, left: i32, right: i32) {
-    let mut psd: *mut polygon_score_data = user_data as *mut polygon_score_data;
     let xs: [i32; 2] = [left, right];
     let dy: i32 = y - (*psd).ref_0.y;
+    let mut psd = user_data as *mut PolygonScoreData;
     let mut i = 0;
     while i < 2 {
         let dx: i32 = xs[i as usize] - (*psd).ref_0.x;
@@ -329,8 +304,8 @@ unsafe fn find_one_corner(user_data: *mut libc::c_void, y: i32, left: i32, right
 }
 
 unsafe fn find_other_corners(user_data: *mut libc::c_void, y: i32, left: i32, right: i32) {
-    let mut psd: *mut polygon_score_data = user_data as *mut polygon_score_data;
     let xs: [i32; 2] = [left, right];
+    let mut psd = user_data as *mut PolygonScoreData;
     let mut i = 0;
     while i < 2 {
         let up: i32 = xs[i as usize] * (*psd).ref_0.x + y * (*psd).ref_0.y;
@@ -351,15 +326,15 @@ unsafe fn find_other_corners(user_data: *mut libc::c_void, y: i32, left: i32, ri
 
 unsafe fn find_region_corners(q: *mut Quirc, rcode: i32, ref_0: *const Point, corners: *mut Point) {
     let region: *mut Region = &mut *(*q).regions.as_mut_ptr().offset(rcode as isize) as *mut Region;
-    let mut psd: polygon_score_data = polygon_score_data {
+    let mut psd: PolygonScoreData = PolygonScoreData {
         ref_0: Point { x: 0, y: 0 },
         scores: [0; 4],
         corners: 0 as *mut Point,
     };
     memset(
-        &mut psd as *mut polygon_score_data as *mut libc::c_void,
+        &mut psd as *mut PolygonScoreData as *mut libc::c_void,
         0,
-        std::mem::size_of::<polygon_score_data>(),
+        std::mem::size_of::<PolygonScoreData>(),
     );
     psd.corners = corners;
     memcpy(
@@ -407,11 +382,9 @@ unsafe fn find_region_corners(q: *mut Quirc, rcode: i32, ref_0: *const Point, co
     );
 }
 
-unsafe fn record_capstone(q: *mut Quirc, ring: i32, stone: i32) {
-    let mut stone_reg: *mut Region =
-        &mut *(*q).regions.as_mut_ptr().offset(stone as isize) as *mut Region;
-    let mut ring_reg: *mut Region =
-        &mut *(*q).regions.as_mut_ptr().offset(ring as isize) as *mut Region;
+unsafe fn record_capstone(q: &mut Quirc, ring: i32, stone: i32) {
+    let mut stone_reg = &mut *(*q).regions.as_mut_ptr().offset(stone as isize) as *mut Region;
+    let mut ring_reg = &mut *(*q).regions.as_mut_ptr().offset(ring as isize) as *mut Region;
     if (*q).num_capstones() >= 32 {
         return;
     }
@@ -434,18 +407,8 @@ unsafe fn record_capstone(q: *mut Quirc, ring: i32, stone: i32) {
         capstone.corners.as_mut_ptr(),
     );
     /* Set up the perspective transform and find the center */
-    perspective_setup(
-        capstone.c.as_mut_ptr(),
-        capstone.corners.as_mut_ptr(),
-        7.0f64,
-        7.0f64,
-    );
-    perspective_map(
-        capstone.c.as_mut_ptr(),
-        3.5f64,
-        3.5f64,
-        &mut capstone.center,
-    );
+    perspective_setup(&mut capstone.c, &capstone.corners, 7.0f64, 7.0f64);
+    perspective_map(&capstone.c, 3.5, 3.5, &mut capstone.center);
 }
 
 unsafe fn test_capstone(q: *mut Quirc, x: i32, y: i32, pb: *mut i32) {
@@ -550,8 +513,8 @@ unsafe fn find_alignment_pattern(q: *mut Quirc, index: i32) {
     let mut c: Point = Point { x: 0, y: 0 };
     let mut step_size: i32 = 1;
     let mut dir: i32 = 0;
-    let mut u: libc::c_double = 0.;
-    let mut v: libc::c_double = 0.;
+    let mut u: f64 = 0.;
+    let mut v: f64 = 0.;
     /* Grab our previous estimate of the alignment pattern corner */
     memcpy(
         &mut b as *mut Point as *mut libc::c_void,
@@ -561,11 +524,11 @@ unsafe fn find_alignment_pattern(q: *mut Quirc, index: i32) {
     /* Guess another two corners of the alignment pattern so that we
      * can estimate its size.
      */
-    perspective_unmap((*c0).c.as_mut_ptr(), &mut b, &mut u, &mut v);
-    perspective_map((*c0).c.as_mut_ptr(), u, v + 1.0f64, &mut a);
-    perspective_unmap((*c2).c.as_mut_ptr(), &mut b, &mut u, &mut v);
-    perspective_map((*c2).c.as_mut_ptr(), u + 1.0f64, v, &mut c);
-    let size_estimate = abs((a.x - b.x) * -(c.y - b.y) + (a.y - b.y) * (c.x - b.x));
+    perspective_unmap(&(*c0).c, &mut b, &mut u, &mut v);
+    perspective_map(&(*c0).c, u, v + 1.0f64, &mut a);
+    perspective_unmap(&(*c2).c, &mut b, &mut u, &mut v);
+    perspective_map(&(*c2).c, u + 1.0f64, v, &mut c);
+    let size_estimate = ((a.x - b.x) * -(c.y - b.y) + (a.y - b.y) * (c.x - b.x)).abs();
     /* Spiral outwards from the estimate point until we find something
      * roughly the right size. Don't look too far from the estimate
      * point.
@@ -596,8 +559,8 @@ unsafe fn find_alignment_pattern(q: *mut Quirc, index: i32) {
 }
 
 unsafe fn find_leftmost_to_line(user_data: *mut libc::c_void, y: i32, left: i32, right: i32) {
-    let mut psd: *mut polygon_score_data = user_data as *mut polygon_score_data;
     let xs: [i32; 2] = [left, right];
+    let mut psd: *mut PolygonScoreData = user_data as *mut PolygonScoreData;
     let mut i = 0;
     while i < 2 {
         let d: i32 = -(*psd).ref_0.y * xs[i as usize] + (*psd).ref_0.x * y;
@@ -630,7 +593,7 @@ unsafe fn timing_scan(q: *const Quirc, p0: *const Point, p1: *const Point) -> i3
     if (*p1).x < 0 || (*p1).y < 0 || (*p1).x >= (*q).w as i32 || (*p1).y >= (*q).h as i32 {
         return -1;
     }
-    if abs(n) > abs(d) {
+    if n.abs() > d.abs() {
         let swap: i32 = n;
         n = d;
         d = swap;
@@ -694,15 +657,15 @@ unsafe fn measure_timing_pattern(q: *mut Quirc, index: i32) -> i32 {
     let mut qr: *mut Grid = &mut *(*q).grids.as_mut_ptr().offset(index as isize) as *mut Grid;
     let mut i = 0;
     while i < 3 {
-        static mut us: [libc::c_double; 3] = [6.5f64, 6.5f64, 0.5f64];
-        static mut vs: [libc::c_double; 3] = [0.5f64, 6.5f64, 6.5f64];
+        static mut us: [f64; 3] = [6.5f64, 6.5f64, 0.5f64];
+        static mut vs: [f64; 3] = [0.5f64, 6.5f64, 6.5f64];
         let cap: *mut Capstone = &mut *(*q)
             .capstones
             .as_mut_ptr()
             .offset(*(*qr).caps.as_mut_ptr().offset(i as isize) as isize)
             as *mut Capstone;
         perspective_map(
-            (*cap).c.as_mut_ptr(),
+            &(*cap).c,
             us[i as usize],
             vs[i as usize],
             &mut *(*qr).tpep.as_mut_ptr().offset(i as isize),
@@ -740,12 +703,7 @@ unsafe fn measure_timing_pattern(q: *mut Quirc, index: i32) -> i32 {
 unsafe fn read_cell(q: *const Quirc, index: i32, x: i32, y: i32) -> i32 {
     let qr: *const Grid = &*(*q).grids.as_ptr().offset(index as isize) as *const Grid;
     let mut p: Point = Point { x: 0, y: 0 };
-    perspective_map(
-        (*qr).c.as_ptr(),
-        x as libc::c_double + 0.5f64,
-        y as libc::c_double + 0.5f64,
-        &mut p,
-    );
+    perspective_map(&(*qr).c, x as f64 + 0.5f64, y as f64 + 0.5f64, &mut p);
     if p.y < 0 || p.y >= (*q).h as i32 || p.x < 0 || p.x >= (*q).w as i32 {
         return 0;
     }
@@ -768,12 +726,12 @@ unsafe fn fitness_cell(q: *const Quirc, index: i32, x: i32, y: i32) -> i32 {
     while v < 3 {
         let mut u = 0;
         while u < 3 {
-            static mut offsets: [libc::c_double; 3] = [0.3f64, 0.5f64, 0.7f64];
+            static mut offsets: [f64; 3] = [0.3f64, 0.5f64, 0.7f64];
             let mut p: Point = Point { x: 0, y: 0 };
             perspective_map(
-                (*qr).c.as_ptr(),
-                x as libc::c_double + offsets[u as usize],
-                y as libc::c_double + offsets[v as usize],
+                &(*qr).c,
+                x as f64 + offsets[u as usize],
+                y as f64 + offsets[v as usize],
                 &mut p,
             );
             if !(p.y < 0 || p.y >= (*q).h as i32 || p.x < 0 || p.x >= (*q).w as i32) {
@@ -870,7 +828,7 @@ unsafe fn fitness_all(q: *const Quirc, index: i32) -> i32 {
 unsafe fn jiggle_perspective(q: *mut Quirc, index: i32) {
     let mut qr: *mut Grid = &mut *(*q).grids.as_mut_ptr().offset(index as isize) as *mut Grid;
     let mut best: i32 = fitness_all(q, index);
-    let mut adjustments: [libc::c_double; 8] = [0.; 8];
+    let mut adjustments: [f64; 8] = [0.; 8];
     let mut i = 0;
     while i < 8 {
         adjustments[i as usize] = (*qr).c[i as usize] * 0.02f64;
@@ -881,9 +839,9 @@ unsafe fn jiggle_perspective(q: *mut Quirc, index: i32) {
         i = 0;
         while i < 16 {
             let j: i32 = i >> 1;
-            let old: libc::c_double = (*qr).c[j as usize];
-            let step: libc::c_double = adjustments[j as usize];
-            let new: libc::c_double;
+            let old: f64 = (*qr).c[j as usize];
+            let step: f64 = adjustments[j as usize];
+            let new: f64;
             if i & 1 != 0 {
                 new = old + step
             } else {
@@ -953,10 +911,10 @@ unsafe fn setup_qr_perspective(q: *mut Quirc, index: i32) {
         std::mem::size_of::<Point>(),
     );
     perspective_setup(
-        (*qr).c.as_mut_ptr(),
-        rect.as_mut_ptr(),
-        ((*qr).grid_size - 7) as libc::c_double,
-        ((*qr).grid_size - 7) as libc::c_double,
+        &mut (*qr).c,
+        &rect,
+        ((*qr).grid_size - 7) as f64,
+        ((*qr).grid_size - 7) as f64,
     );
     jiggle_perspective(q, index);
 }
@@ -995,12 +953,7 @@ unsafe fn rotate_capstone(cap: *mut Capstone, h0: *const Point, hd: *const Point
         copy.as_mut_ptr() as *const libc::c_void,
         std::mem::size_of::<[Point; 4]>(),
     );
-    perspective_setup(
-        (*cap).c.as_mut_ptr(),
-        (*cap).corners.as_mut_ptr(),
-        7.0f64,
-        7.0f64,
-    );
+    perspective_setup(&mut (*cap).c, &(*cap).corners, 7.0, 7.0);
 }
 unsafe fn record_qr_grid(q: *mut Quirc, mut a: i32, b: i32, mut c: i32) {
     let mut h0: Point = Point { x: 0, y: 0 };
@@ -1092,7 +1045,7 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: i32, b: i32, mut c: i32) {
                  * top-left of the QR grid.
                  */
                 if (*qr).align_region >= 0 {
-                    let mut psd: polygon_score_data = polygon_score_data {
+                    let mut psd: PolygonScoreData = PolygonScoreData {
                         ref_0: Point { x: 0, y: 0 },
                         scores: [0; 4],
                         corners: 0 as *mut Point,
@@ -1135,7 +1088,7 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: i32, b: i32, mut c: i32) {
                             find_leftmost_to_line
                                 as unsafe fn(_: *mut libc::c_void, _: i32, _: i32, _: i32) -> (),
                         ),
-                        &mut psd as *mut polygon_score_data as *mut libc::c_void,
+                        &mut psd as *mut PolygonScoreData as *mut libc::c_void,
                         0,
                     );
                 }
@@ -1158,10 +1111,10 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: i32, b: i32, mut c: i32) {
 unsafe fn test_neighbours(
     q: *mut Quirc,
     i: i32,
-    hlist: *const neighbour_list,
-    vlist: *const neighbour_list,
+    hlist: *const NeighbourList,
+    vlist: *const NeighbourList,
 ) {
-    let mut best_score: libc::c_double = 0.0f64;
+    let mut best_score: f64 = 0.0f64;
     let mut best_h: i32 = -1;
     let mut best_v: i32 = -1;
     /* Test each possible grouping */
@@ -1169,9 +1122,9 @@ unsafe fn test_neighbours(
     while j < (*hlist).count {
         let mut k = 0;
         while k < (*vlist).count {
-            let hn: *const neighbour = &*(*hlist).n.as_ptr().offset(j as isize) as *const neighbour;
-            let vn: *const neighbour = &*(*vlist).n.as_ptr().offset(k as isize) as *const neighbour;
-            let score: libc::c_double = (1.0f64 - (*hn).distance / (*vn).distance).abs();
+            let hn: *const Neighbour = &*(*hlist).n.as_ptr().offset(j as isize) as *const Neighbour;
+            let vn: *const Neighbour = &*(*vlist).n.as_ptr().offset(k as isize) as *const Neighbour;
+            let score: f64 = (1.0f64 - (*hn).distance / (*vn).distance).abs();
             if !(score > 2.5f64) {
                 if best_h < 0 || score < best_score {
                     best_h = (*hn).index;
@@ -1190,15 +1143,15 @@ unsafe fn test_neighbours(
 }
 unsafe fn test_grouping(q: *mut Quirc, i: i32) {
     let c1: *mut Capstone = &mut *(*q).capstones.as_mut_ptr().offset(i as isize) as *mut Capstone;
-    let mut hlist: neighbour_list = neighbour_list {
-        n: [neighbour {
+    let mut hlist = NeighbourList {
+        n: [Neighbour {
             index: 0,
             distance: 0.,
         }; 32],
         count: 0,
     };
-    let mut vlist: neighbour_list = neighbour_list {
-        n: [neighbour {
+    let mut vlist = NeighbourList {
+        n: [Neighbour {
             index: 0,
             distance: 0.,
         }; 32],
@@ -1216,10 +1169,10 @@ unsafe fn test_grouping(q: *mut Quirc, i: i32) {
     while j < (*q).num_capstones() as i32 {
         let c2: *mut Capstone =
             &mut *(*q).capstones.as_mut_ptr().offset(j as isize) as *mut Capstone;
-        let mut u: libc::c_double = 0.;
-        let mut v: libc::c_double = 0.;
+        let mut u: f64 = 0.;
+        let mut v: f64 = 0.;
         if !(i == j || (*c2).qr_grid >= 0) {
-            perspective_unmap((*c1).c.as_mut_ptr(), &mut (*c2).center, &mut u, &mut v);
+            perspective_unmap(&(*c1).c, &mut (*c2).center, &mut u, &mut v);
             u = (u - 3.5f64).abs();
             v = (v - 3.5f64).abs();
             if u < 0.2f64 * v {
@@ -1233,8 +1186,8 @@ unsafe fn test_grouping(q: *mut Quirc, i: i32) {
             if v < 0.2f64 * u {
                 let fresh6 = vlist.count;
                 vlist.count = vlist.count + 1;
-                let mut n_0: *mut neighbour =
-                    &mut *vlist.n.as_mut_ptr().offset(fresh6 as isize) as *mut neighbour;
+                let mut n_0: *mut Neighbour =
+                    &mut *vlist.n.as_mut_ptr().offset(fresh6 as isize) as *mut Neighbour;
                 (*n_0).index = j;
                 (*n_0).distance = u
             }
@@ -1317,27 +1270,27 @@ pub unsafe fn quirc_extract(q: *const Quirc, index: i32, mut code: *mut Code) {
     }
     memset(code as *mut libc::c_void, 0, std::mem::size_of::<Code>());
     perspective_map(
-        (*qr).c.as_ptr(),
-        0.0f64,
-        0.0f64,
+        &(*qr).c,
+        0.0,
+        0.0,
         &mut *(*code).corners.as_mut_ptr().offset(0),
     );
     perspective_map(
-        (*qr).c.as_ptr(),
-        (*qr).grid_size as libc::c_double,
-        0.0f64,
+        &(*qr).c,
+        (*qr).grid_size as f64,
+        0.0,
         &mut *(*code).corners.as_mut_ptr().offset(1),
     );
     perspective_map(
-        (*qr).c.as_ptr(),
-        (*qr).grid_size as libc::c_double,
-        (*qr).grid_size as libc::c_double,
+        &(*qr).c,
+        (*qr).grid_size as f64,
+        (*qr).grid_size as f64,
         &mut *(*code).corners.as_mut_ptr().offset(2),
     );
     perspective_map(
-        (*qr).c.as_ptr(),
+        &(*qr).c,
         0.0f64,
-        (*qr).grid_size as libc::c_double,
+        (*qr).grid_size as f64,
         &mut *(*code).corners.as_mut_ptr().offset(3),
     );
     (*code).size = (*qr).grid_size;
