@@ -295,21 +295,18 @@ unsafe fn region_code(mut q: *mut Quirc, x: libc::c_int, y: libc::c_int) -> libc
     if pixel == 0 {
         return -1;
     }
-    if (*q).num_regions >= 65534 {
+    let region = (*q).num_regions() as libc::c_int;
+
+    if region >= 65534 {
         return -1;
     }
-    let region = (*q).num_regions;
-    let fresh2 = (*q).num_regions;
-    (*q).num_regions = (*q).num_regions + 1;
-    let box_0 = &mut *(*q).regions.as_mut_ptr().offset(fresh2 as isize) as *mut quirc_region;
-    memset(
-        box_0 as *mut libc::c_void,
-        0,
-        std::mem::size_of::<quirc_region>(),
-    );
-    (*box_0).seed.x = x;
-    (*box_0).seed.y = y;
-    (*box_0).capstone = -1;
+
+    (*q).regions.push(quirc_region {
+        seed: quirc_point { x, y },
+        count: 0,
+        capstone: -1,
+    });
+
     flood_fill_seed(
         q,
         x,
@@ -325,9 +322,10 @@ unsafe fn region_code(mut q: *mut Quirc, x: libc::c_int, y: libc::c_int) -> libc
                     _: libc::c_int,
                 ) -> (),
         ),
-        box_0 as *mut libc::c_void,
+        &mut (*q).regions[region as usize] as *mut _ as *mut libc::c_void,
         0,
     );
+
     return region;
 }
 
@@ -1400,7 +1398,10 @@ unsafe fn pixels_setup(q: *mut Quirc, threshold: uint8_t) {
 /// width and height may be returned.
 pub unsafe fn quirc_begin(q: *mut Quirc, w: *mut usize, h: *mut usize) -> *mut uint8_t {
     let q = &mut *q;
-    q.num_regions = 2;
+
+    q.regions.push(Default::default());
+    q.regions.push(Default::default());
+
     q.num_capstones = 0;
     q.num_grids = 0;
 

@@ -11,12 +11,17 @@ pub struct Quirc {
     pub pixels: Vec<quirc_pixel_t>,
     pub w: usize,
     pub h: usize,
-    pub num_regions: libc::c_int,
-    pub regions: [quirc_region; 65534],
+    pub regions: Vec<quirc_region>,
     pub num_capstones: libc::c_int,
     pub capstones: [quirc_capstone; 32],
     pub num_grids: libc::c_int,
     pub grids: [quirc_grid; 8],
+}
+
+impl Quirc {
+    pub fn num_regions(&self) -> usize {
+        self.regions.len()
+    }
 }
 
 impl Default for Quirc {
@@ -26,8 +31,7 @@ impl Default for Quirc {
             pixels: Default::default(),
             w: 0,
             h: 0,
-            num_regions: 0,
-            regions: [Default::default(); 65534],
+            regions: Default::default(),
             num_capstones: 0,
             capstones: [Default::default(); 32],
             num_grids: 0,
