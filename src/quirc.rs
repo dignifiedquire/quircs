@@ -1,7 +1,7 @@
 use num_derive::{FromPrimitive, ToPrimitive};
 
 pub type Pixel = u16;
-pub type quirc_decode_error_t = u32;
+pub type DecodeError = u32;
 
 #[derive(Debug, Clone, Default)]
 pub struct Quirc {
@@ -91,14 +91,14 @@ pub struct Region {
     pub capstone: i32,
 }
 
-pub const QUIRC_ERROR_DATA_UNDERFLOW: quirc_decode_error_t = 7;
-pub const QUIRC_ERROR_DATA_OVERFLOW: quirc_decode_error_t = 6;
-pub const QUIRC_ERROR_UNKNOWN_DATA_TYPE: quirc_decode_error_t = 5;
-pub const QUIRC_ERROR_DATA_ECC: quirc_decode_error_t = 4;
-pub const QUIRC_ERROR_FORMAT_ECC: quirc_decode_error_t = 3;
-pub const QUIRC_ERROR_INVALID_VERSION: quirc_decode_error_t = 2;
-pub const QUIRC_ERROR_INVALID_GRID_SIZE: quirc_decode_error_t = 1;
-pub const QUIRC_SUCCESS: quirc_decode_error_t = 0;
+pub const QUIRC_ERROR_DATA_UNDERFLOW: DecodeError = 7;
+pub const QUIRC_ERROR_DATA_OVERFLOW: DecodeError = 6;
+pub const QUIRC_ERROR_UNKNOWN_DATA_TYPE: DecodeError = 5;
+pub const QUIRC_ERROR_DATA_ECC: DecodeError = 4;
+pub const QUIRC_ERROR_FORMAT_ECC: DecodeError = 3;
+pub const QUIRC_ERROR_INVALID_VERSION: DecodeError = 2;
+pub const QUIRC_ERROR_INVALID_GRID_SIZE: DecodeError = 1;
+pub const QUIRC_SUCCESS: DecodeError = 0;
 
 /// This structure is used to return information about detected QR codes
 /// in the input image.
@@ -243,7 +243,7 @@ static ERROR_TABLE: [&str; 8] = [
     "Data underflow",
 ];
 
-pub fn quirc_strerror(err: quirc_decode_error_t) -> &'static str {
+pub fn quirc_strerror(err: DecodeError) -> &'static str {
     if (err as usize) < ERROR_TABLE.len() {
         return ERROR_TABLE[err as usize];
     }

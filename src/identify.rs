@@ -189,11 +189,11 @@ unsafe fn flood_fill_seed<F>(
 // --- Adaptive thresholding
 
 unsafe fn otsu(q: *const Quirc) -> u8 {
-    let numPixels = (*q).w * (*q).h;
+    let num_pixels = (*q).w * (*q).h;
     // Calculate histogram
     let mut histogram: [u32; 256] = [0; 256];
     let mut ptr = (*q).image.as_ptr();
-    let mut length = numPixels;
+    let mut length = num_pixels;
     loop {
         let fresh0 = length;
         length = length - 1;
@@ -213,7 +213,7 @@ unsafe fn otsu(q: *const Quirc) -> u8 {
         i = i.wrapping_add(1)
     }
     // Compute threshold
-    let mut sumB: i32 = 0;
+    let mut sum_b: i32 = 0;
     let mut q1: i32 = 0;
     let mut max: f64 = 0 as f64;
     let mut threshold: u8 = 0 as u8;
@@ -223,13 +223,14 @@ unsafe fn otsu(q: *const Quirc) -> u8 {
         q1 = (q1 as u32).wrapping_add(histogram[i as usize]) as i32 as i32;
         if !(q1 == 0) {
             // Weighted foreground
-            let q2 = numPixels as i32 - q1;
+            let q2 = num_pixels as i32 - q1;
             if q2 == 0 {
                 break;
             }
-            sumB = (sumB as u32).wrapping_add(i.wrapping_mul(histogram[i as usize])) as i32 as i32;
-            let m1: f64 = sumB as f64 / q1 as f64;
-            let m2: f64 = (sum as f64 - sumB as f64) / q2 as f64;
+            sum_b =
+                (sum_b as u32).wrapping_add(i.wrapping_mul(histogram[i as usize])) as i32 as i32;
+            let m1: f64 = sum_b as f64 / q1 as f64;
+            let m2: f64 = (sum as f64 - sum_b as f64) / q2 as f64;
             let m1m2: f64 = m1 - m2;
             let variance: f64 = m1m2 * m1m2 * q1 as f64 * q2 as f64;
             if variance >= max {
@@ -458,14 +459,14 @@ unsafe fn finder_scan(q: *mut Quirc, y: i32) {
             run_length = 0;
             run_count += 1;
             if color == 0 && run_count >= 5 {
-                static mut check: [i32; 5] = [1, 1, 3, 1, 1];
+                static CHECK: [i32; 5] = [1, 1, 3, 1, 1];
                 let mut ok: i32 = 1;
                 let avg = (pb[0] + pb[1] + pb[3] + pb[4]) / 4;
                 let err = avg * 3 / 4;
                 let mut i = 0;
                 while i < 5 {
-                    if pb[i as usize] < check[i as usize] * avg - err
-                        || pb[i as usize] > check[i as usize] * avg + err
+                    if pb[i as usize] < CHECK[i as usize] * avg - err
+                        || pb[i as usize] > CHECK[i as usize] * avg + err
                     {
                         ok = 0
                     }
@@ -515,8 +516,8 @@ unsafe fn find_alignment_pattern(q: *mut Quirc, index: i32) {
      * point.
      */
     while step_size * step_size < size_estimate * 100 {
-        static mut dx_map: [i32; 4] = [1, 0, -1, 0];
-        static mut dy_map: [i32; 4] = [0, -1, 0, 1];
+        static mut DX_MAP: [i32; 4] = [1, 0, -1, 0];
+        static mut DY_MAP: [i32; 4] = [0, -1, 0, 1];
         let mut i = 0;
         while i < step_size {
             let code: i32 = region_code(q, b.x, b.y);
@@ -528,8 +529,8 @@ unsafe fn find_alignment_pattern(q: *mut Quirc, index: i32) {
                     return;
                 }
             }
-            b.x += dx_map[dir as usize];
-            b.y += dy_map[dir as usize];
+            b.x += DX_MAP[dir as usize];
+            b.y += DY_MAP[dir as usize];
             i += 1
         }
         dir = (dir + 1) % 4;
@@ -641,8 +642,8 @@ unsafe fn measure_timing_pattern(q: *mut Quirc, index: i32) -> i32 {
     let mut qr: *mut Grid = &mut *(*q).grids.as_mut_ptr().offset(index as isize) as *mut Grid;
     let mut i = 0;
     while i < 3 {
-        static mut us: [f64; 3] = [6.5f64, 6.5f64, 0.5f64];
-        static mut vs: [f64; 3] = [0.5f64, 6.5f64, 6.5f64];
+        static US: [f64; 3] = [6.5, 6.5, 0.5];
+        static VS: [f64; 3] = [0.5, 6.5, 6.5];
         let cap: *mut Capstone = &mut *(*q)
             .capstones
             .as_mut_ptr()
@@ -650,8 +651,8 @@ unsafe fn measure_timing_pattern(q: *mut Quirc, index: i32) -> i32 {
             as *mut Capstone;
         perspective_map(
             &(*cap).c,
-            us[i as usize],
-            vs[i as usize],
+            US[i as usize],
+            VS[i as usize],
             &mut *(*qr).tpep.as_mut_ptr().offset(i as isize),
         );
         i += 1
@@ -710,12 +711,12 @@ unsafe fn fitness_cell(q: *const Quirc, index: i32, x: i32, y: i32) -> i32 {
     while v < 3 {
         let mut u = 0;
         while u < 3 {
-            static mut offsets: [f64; 3] = [0.3f64, 0.5f64, 0.7f64];
+            static OFFSETS: [f64; 3] = [0.3, 0.5, 0.7];
             let mut p: Point = Point { x: 0, y: 0 };
             perspective_map(
                 &(*qr).c,
-                x as f64 + offsets[u as usize],
-                y as f64 + offsets[v as usize],
+                x as f64 + OFFSETS[u as usize],
+                y as f64 + OFFSETS[v as usize],
                 &mut p,
             );
             if !(p.y < 0 || p.y >= (*q).h as i32 || p.x < 0 || p.x >= (*q).w as i32) {
