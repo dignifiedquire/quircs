@@ -464,10 +464,7 @@ unsafe fn run_tests(paths: &[String]) -> libc::c_int {
 }
 unsafe fn main_0(args: Vec<String>) -> libc::c_int {
     println!("quirc test program");
-    println!(
-        "Library version: {}\n",
-        CStr::from_ptr(quirc_version()).to_str().unwrap()
-    );
+    println!("Library version: {}\n", quirc_version());
 
     run_tests(&args)
 }

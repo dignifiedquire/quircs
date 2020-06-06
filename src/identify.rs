@@ -18,15 +18,10 @@ extern "C" {
     #[no_mangle]
     fn rint(_: libc::c_double) -> libc::c_double;
 }
+
 pub type uint8_t = libc::c_uchar;
 pub type uint16_t = libc::c_ushort;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct neighbour_list {
-    pub n: [neighbour; 32],
-    pub count: libc::c_int,
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct neighbour {
@@ -36,31 +31,21 @@ pub struct neighbour {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+pub struct neighbour_list {
+    pub n: [neighbour; 32],
+    pub count: libc::c_int,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
 pub struct polygon_score_data {
     pub ref_0: quirc_point,
     pub scores: [libc::c_int; 4],
     pub corners: *mut quirc_point,
 }
-pub type span_func_t =
-    Option<unsafe fn(_: *mut libc::c_void, _: libc::c_int, _: libc::c_int, _: libc::c_int) -> ()>;
-/* Limits on the maximum size of QR-codes and their content. */
-/* QR-code ECC types. */
-/* QR-code data types. */
-/* Common character encodings */
-/* This structure is used to return information about detected QR codes
- * in the input image.
- */
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct quirc_code {
-    pub corners: [quirc_point; 4],
-    pub size: libc::c_int,
-    pub cell_bitmap: [uint8_t; 3917],
-}
 
-/* ***********************************************************************
- * Linear algebra routines
- */
+// ---  Linear algebra routines
+
 unsafe fn line_intersect(
     mut p0: *const quirc_point,
     mut p1: *const quirc_point,
@@ -93,6 +78,7 @@ unsafe fn line_intersect(
     (*r).y = (-c * e + a * f) / det;
     return 1i32;
 }
+
 unsafe fn perspective_setup(
     mut c: *mut libc::c_double,
     mut rect: *const quirc_point,
@@ -130,6 +116,7 @@ unsafe fn perspective_setup(
     *c.offset(7) =
         (-x2 * y3 + x1 * y3 + x3 * y2 + x0 * (y1 - y2) - x3 * y1 + (x2 - x1) * y0) / hden;
 }
+
 unsafe fn perspective_map(
     mut c: *const libc::c_double,
     mut u: libc::c_double,
@@ -142,6 +129,7 @@ unsafe fn perspective_map(
     (*ret).x = rint(x) as libc::c_int;
     (*ret).y = rint(y) as libc::c_int;
 }
+
 unsafe fn perspective_unmap(
     mut c: *const libc::c_double,
     mut in_0: *const quirc_point,
@@ -164,6 +152,14 @@ unsafe fn perspective_unmap(
         + *c.offset(2) * *c.offset(3))
         / den;
 }
+
+// --- Span-based floodfill routine
+
+const FLOOD_FILL_MAX_DEPTH: i32 = 4096;
+
+pub type span_func_t =
+    Option<unsafe fn(_: *mut libc::c_void, _: libc::c_int, _: libc::c_int, _: libc::c_int) -> ()>;
+
 unsafe fn flood_fill_seed(
     mut q: *mut Quirc,
     mut x: libc::c_int,
@@ -178,7 +174,7 @@ unsafe fn flood_fill_seed(
     let mut right: libc::c_int = x;
     let mut i: libc::c_int = 0;
     let mut row: *mut quirc_pixel_t = (*q).pixels.offset((y * (*q).w) as isize);
-    if depth >= 4096i32 {
+    if depth >= FLOOD_FILL_MAX_DEPTH {
         return;
     }
     while left > 0i32 && *row.offset((left - 1i32) as isize) as libc::c_int == from {
@@ -218,9 +214,9 @@ unsafe fn flood_fill_seed(
         }
     };
 }
-/* ***********************************************************************
- * Adaptive thresholding
- */
+
+// --- Adaptive thresholding
+
 unsafe fn otsu(mut q: *const Quirc) -> uint8_t {
     let mut numPixels: libc::c_int = (*q).w * (*q).h;
     // Calculate histogram
@@ -283,14 +279,16 @@ unsafe fn otsu(mut q: *const Quirc) -> uint8_t {
     }
     return threshold;
 }
+
 unsafe fn area_count(
     mut user_data: *mut libc::c_void,
-    mut y: libc::c_int,
+    _y: libc::c_int,
     mut left: libc::c_int,
     mut right: libc::c_int,
 ) {
     (*(user_data as *mut quirc_region)).count += right - left + 1i32;
 }
+
 unsafe fn region_code(mut q: *mut Quirc, mut x: libc::c_int, mut y: libc::c_int) -> libc::c_int {
     let mut pixel: libc::c_int = 0;
     let mut box_0: *mut quirc_region = 0 as *mut quirc_region;
@@ -340,6 +338,7 @@ unsafe fn region_code(mut q: *mut Quirc, mut x: libc::c_int, mut y: libc::c_int)
     );
     return region;
 }
+
 unsafe fn find_one_corner(
     mut user_data: *mut libc::c_void,
     mut y: libc::c_int,
@@ -362,6 +361,7 @@ unsafe fn find_one_corner(
         i += 1
     }
 }
+
 unsafe fn find_other_corners(
     mut user_data: *mut libc::c_void,
     mut y: libc::c_int,
@@ -389,6 +389,7 @@ unsafe fn find_other_corners(
         i += 1
     }
 }
+
 unsafe fn find_region_corners(
     mut q: *mut Quirc,
     mut rcode: libc::c_int,
@@ -469,6 +470,7 @@ unsafe fn find_region_corners(
         0i32,
     );
 }
+
 unsafe fn record_capstone(mut q: *mut Quirc, mut ring: libc::c_int, mut stone: libc::c_int) {
     let mut stone_reg: *mut quirc_region =
         &mut *(*q).regions.as_mut_ptr().offset(stone as isize) as *mut quirc_region;
@@ -514,6 +516,7 @@ unsafe fn record_capstone(mut q: *mut Quirc, mut ring: libc::c_int, mut stone: l
         &mut (*capstone).center,
     );
 }
+
 unsafe fn test_capstone(
     mut q: *mut Quirc,
     mut x: libc::c_int,
@@ -555,6 +558,7 @@ unsafe fn test_capstone(
     }
     record_capstone(q, ring_left, stone);
 }
+
 unsafe fn finder_scan(mut q: *mut Quirc, mut y: libc::c_int) {
     let mut row: *mut quirc_pixel_t = (*q).pixels.offset((y * (*q).w) as isize);
     let mut x: libc::c_int = 0;
@@ -611,6 +615,7 @@ unsafe fn finder_scan(mut q: *mut Quirc, mut y: libc::c_int) {
         x += 1
     }
 }
+
 unsafe fn find_alignment_pattern(mut q: *mut Quirc, mut index: libc::c_int) {
     let mut qr: *mut quirc_grid =
         &mut *(*q).grids.as_mut_ptr().offset(index as isize) as *mut quirc_grid;
@@ -675,6 +680,7 @@ unsafe fn find_alignment_pattern(mut q: *mut Quirc, mut index: libc::c_int) {
         }
     }
 }
+
 unsafe fn find_leftmost_to_line(
     mut user_data: *mut libc::c_void,
     mut y: libc::c_int,
@@ -695,9 +701,9 @@ unsafe fn find_leftmost_to_line(
         i += 1
     }
 }
-/* Do a Bresenham scan from one point to another and count the number
- * of black/white transitions.
- */
+
+/// Do a Bresenham scan from one point to another and count the number
+/// of black/white transitions.
 unsafe fn timing_scan(
     mut q: *const Quirc,
     mut p0: *const quirc_point,
@@ -770,15 +776,15 @@ unsafe fn timing_scan(
     }
     return count;
 }
-/* Try the measure the timing pattern for a given QR code. This does
- * not require the global perspective to have been set up, but it
- * does require that the capstone corners have been set to their
- * canonical rotation.
- *
- * For each capstone, we find a point in the middle of the ring band
- * which is nearest the centre of the code. Using these points, we do
- * a horizontal and a vertical timing scan.
- */
+
+/// Try the measure the timing pattern for a given QR code. This does
+/// not require the global perspective to have been set up, but it
+/// does require that the capstone corners have been set to their
+/// canonical rotation.
+///
+/// For each capstone, we find a point in the middle of the ring band
+/// which is nearest the centre of the code. Using these points, we do
+/// a horizontal and a vertical timing scan.
 unsafe fn measure_timing_pattern(mut q: *mut Quirc, mut index: libc::c_int) -> libc::c_int {
     let mut qr: *mut quirc_grid =
         &mut *(*q).grids.as_mut_ptr().offset(index as isize) as *mut quirc_grid;
@@ -827,10 +833,10 @@ unsafe fn measure_timing_pattern(mut q: *mut Quirc, mut index: libc::c_int) -> l
     (*qr).grid_size = ver * 4i32 + 17i32;
     return 0i32;
 }
-/* Read a cell from a grid using the currently set perspective
- * transform. Returns +/- 1 for black/white, 0 for cells which are
- * out of image bounds.
- */
+
+/// Read a cell from a grid using the currently set perspective
+/// transform. Returns +/- 1 for black/white, 0 for cells which are
+/// out of image bounds.
 unsafe fn read_cell(
     mut q: *const Quirc,
     mut index: libc::c_int,
@@ -855,6 +861,7 @@ unsafe fn read_cell(
         -1i32
     };
 }
+
 unsafe fn fitness_cell(
     mut q: *const Quirc,
     mut index: libc::c_int,
@@ -891,6 +898,7 @@ unsafe fn fitness_cell(
     }
     return score;
 }
+
 unsafe fn fitness_ring(
     mut q: *const Quirc,
     mut index: libc::c_int,
@@ -910,6 +918,7 @@ unsafe fn fitness_ring(
     }
     return score;
 }
+
 unsafe fn fitness_apat(
     mut q: *const Quirc,
     mut index: libc::c_int,
@@ -919,6 +928,7 @@ unsafe fn fitness_apat(
     return fitness_cell(q, index, cx, cy) - fitness_ring(q, index, cx, cy, 1i32)
         + fitness_ring(q, index, cx, cy, 2i32);
 }
+
 unsafe fn fitness_capstone(
     mut q: *const Quirc,
     mut index: libc::c_int,
@@ -931,10 +941,10 @@ unsafe fn fitness_capstone(
         - fitness_ring(q, index, x, y, 2i32)
         + fitness_ring(q, index, x, y, 3i32);
 }
-/* Compute a fitness score for the currently configured perspective
- * transform, using the features we expect to find by scanning the
- * grid.
- */
+
+/// Compute a fitness score for the currently configured perspective
+/// transform, using the features we expect to find by scanning the
+/// grid.
 unsafe fn fitness_all(mut q: *const Quirc, mut index: libc::c_int) -> libc::c_int {
     let mut qr: *const quirc_grid =
         &*(*q).grids.as_ptr().offset(index as isize) as *const quirc_grid;
@@ -982,6 +992,7 @@ unsafe fn fitness_all(mut q: *const Quirc, mut index: libc::c_int) -> libc::c_in
     }
     return score;
 }
+
 unsafe fn jiggle_perspective(mut q: *mut Quirc, mut index: libc::c_int) {
     let mut qr: *mut quirc_grid =
         &mut *(*q).grids.as_mut_ptr().offset(index as isize) as *mut quirc_grid;
@@ -1025,10 +1036,10 @@ unsafe fn jiggle_perspective(mut q: *mut Quirc, mut index: libc::c_int) {
         pass += 1
     }
 }
-/* Once the capstones are in place and an alignment point has been
- * chosen, we call this function to set up a grid-reading perspective
- * transform.
- */
+
+/// Once the capstones are in place and an alignment point has been
+/// chosen, we call this function to set up a grid-reading perspective
+/// transform.
 unsafe fn setup_qr_perspective(mut q: *mut Quirc, mut index: libc::c_int) {
     let mut qr: *mut quirc_grid =
         &mut *(*q).grids.as_mut_ptr().offset(index as isize) as *mut quirc_grid;
@@ -1080,9 +1091,9 @@ unsafe fn setup_qr_perspective(mut q: *mut Quirc, mut index: libc::c_int) {
     );
     jiggle_perspective(q, index);
 }
-/* Rotate the capstone with so that corner 0 is the leftmost with respect
- * to the given reference line.
- */
+
+/// Rotate the capstone with so that corner 0 is the leftmost with respect
+/// to the given reference line.
 unsafe fn rotate_capstone(
     mut cap: *mut quirc_capstone,
     mut h0: *const quirc_point,
@@ -1295,6 +1306,7 @@ unsafe fn record_qr_grid(
     }
     (*q).num_grids -= 1;
 }
+
 unsafe fn test_neighbours(
     mut q: *mut Quirc,
     mut i: libc::c_int,
@@ -1392,6 +1404,7 @@ unsafe fn test_grouping(mut q: *mut Quirc, mut i: libc::c_int) {
     }
     test_neighbours(q, i, &mut hlist, &mut vlist);
 }
+
 unsafe fn pixels_setup(mut q: *mut Quirc, mut threshold: uint8_t) {
     let mut source: *mut uint8_t = (*q).image;
     let mut dest: *mut quirc_pixel_t = (*q).pixels;
@@ -1414,7 +1427,10 @@ unsafe fn pixels_setup(mut q: *mut Quirc, mut threshold: uint8_t) {
         } as quirc_pixel_t
     }
 }
-#[no_mangle]
+/// These functions are used to process images for QR-code recognition.
+/// quirc_begin() must first be called to obtain access to a buffer into
+/// which the input image should be placed. Optionally, the current
+/// width and height may be returned.
 pub unsafe fn quirc_begin(
     mut q: *mut Quirc,
     mut w: *mut libc::c_int,
@@ -1431,7 +1447,10 @@ pub unsafe fn quirc_begin(
     }
     return (*q).image;
 }
-#[no_mangle]
+
+/// After filling the buffer, quirc_end() should be called to process
+/// the image for QR-code recognition. The locations and content of each
+/// code may be obtained using accessor functions described below.
 pub unsafe fn quirc_end(mut q: *mut Quirc) {
     let mut i: libc::c_int = 0;
     let mut threshold: uint8_t = otsu(q);
@@ -1447,8 +1466,7 @@ pub unsafe fn quirc_end(mut q: *mut Quirc) {
         i += 1
     }
 }
-/* Extract the QR-code specified by the given index. */
-#[no_mangle]
+/// Extract the QR-code specified by the given index.
 pub unsafe fn quirc_extract(
     mut q: *const Quirc,
     mut index: libc::c_int,

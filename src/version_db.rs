@@ -1,7 +1,9 @@
 use libc;
-/* ***********************************************************************
- * QR-code version information database
- */
+
+pub const VERSION_MIN: usize = 1;
+pub const VERSION_MAX: usize = 40;
+
+/// QR-code version information database
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct quirc_rs_params {

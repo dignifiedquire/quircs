@@ -1,6 +1,6 @@
 use libc;
 
-use crate::identify::*;
+use crate::quirc::*;
 use crate::version_db::*;
 
 extern "C" {
@@ -24,18 +24,6 @@ pub const QUIRC_ERROR_INVALID_VERSION: quirc_decode_error_t = 2;
 pub const QUIRC_ERROR_INVALID_GRID_SIZE: quirc_decode_error_t = 1;
 pub const QUIRC_SUCCESS: quirc_decode_error_t = 0;
 
-/* This structure holds the decoded QR-code data */
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct quirc_data {
-    pub version: libc::c_int,
-    pub ecc_level: libc::c_int,
-    pub mask: libc::c_int,
-    pub data_type: libc::c_int,
-    pub payload: [uint8_t; 8896],
-    pub payload_len: libc::c_int,
-    pub eci: uint32_t,
-}
 /* ***********************************************************************
  * Decoder algorithm
  */
