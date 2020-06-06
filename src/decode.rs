@@ -1,4 +1,3 @@
-use libc::{abs, memcpy, memset};
 use num_traits::{FromPrimitive, ToPrimitive};
 
 use crate::quirc::*;
@@ -197,8 +196,11 @@ fn block_syndromes(data: &[u8], bs: i32, npar: usize, s: &mut [u8]) -> i32 {
     nonzero
 }
 
-unsafe fn eloc_poly(omega: *mut u8, s: &[u8], sigma: &[u8], npar: usize) {
-    memset(omega as *mut libc::c_void, 0, 64);
+fn eloc_poly(omega: &mut [u8], s: &[u8], sigma: &[u8], npar: usize) {
+    for val in omega.iter_mut().take(64) {
+        *val = 0;
+    }
+
     for i in 0..npar {
         let a = sigma[i];
         let log_a = GF256_LOG[a as usize];
@@ -214,15 +216,14 @@ unsafe fn eloc_poly(omega: *mut u8, s: &[u8], sigma: &[u8], npar: usize) {
                 continue;
             }
 
-            let ref mut fresh2 = *omega.offset((i + j) as isize);
-            *fresh2 = (*fresh2 as i32
+            omega[i + j] = (omega[i + j] as i32
                 ^ GF256_EXP[((log_a as i32 + GF256_LOG[b as usize] as i32) % 255) as usize] as i32)
                 as u8
         }
     }
 }
 
-unsafe fn correct_block(data: &mut [u8], ecc: *const quirc_rs_params) -> quirc_decode_error_t {
+fn correct_block(data: &mut [u8], ecc: &RsParams) -> quirc_decode_error_t {
     let npar = (*ecc).bs as usize - (*ecc).dw as usize;
     let mut s: [u8; 64] = [0; 64];
     let mut sigma: [u8; 64] = [0; 64];
@@ -234,14 +235,14 @@ unsafe fn correct_block(data: &mut [u8], ecc: *const quirc_rs_params) -> quirc_d
     }
     berlekamp_massey(&s, npar, &GF256, &mut sigma);
     /* Compute derivative of sigma */
-    memset(sigma_deriv.as_mut_ptr() as *mut libc::c_void, 0, 64);
     let mut i = 0;
     while i + 1 < 64 {
         sigma_deriv[i as usize] = sigma[(i + 1) as usize];
         i += 2
     }
     /* Compute error evaluator polynomial */
-    eloc_poly(omega.as_mut_ptr(), &s, &sigma, npar - 1);
+    eloc_poly(&mut omega, &s, &sigma, npar - 1);
+
     /* Find error locations and magnitudes */
     i = 0;
     while i < (*ecc).bs {
@@ -263,27 +264,30 @@ unsafe fn correct_block(data: &mut [u8], ecc: *const quirc_rs_params) -> quirc_d
     }
     return QUIRC_SUCCESS;
 }
-unsafe fn format_syndromes(u: u16, s: *mut u8) -> i32 {
-    let mut nonzero: i32 = 0;
-    memset(s as *mut libc::c_void, 0, 64);
+
+fn format_syndromes(u: u16, s: &mut [u8]) -> i32 {
+    let mut nonzero = 0;
+    for val in s.iter_mut().take(64) {
+        *val = 0;
+    }
     let mut i = 0;
     while i < 3 * 2 {
-        *s.offset(i as isize) = 0;
-        let mut j = 0;
-        while j < 15 {
+        s[i] = 0;
+        for j in 0..15 {
             if u as i32 & 1 << j != 0 {
-                let ref mut fresh4 = *s.offset(i as isize);
-                *fresh4 = (*fresh4 as i32 ^ GF16_EXP[((i + 1) * j % 15) as usize] as i32) as u8;
+                s[i] = (s[i] as i32 ^ GF16_EXP[((i + 1) * j % 15) as usize] as i32) as u8;
             }
-            j += 1
         }
-        if *s.offset(i as isize) != 0 {
-            nonzero = 1
+
+        if s[i] != 0 {
+            nonzero = 1;
         }
         i += 1
     }
-    return nonzero;
+
+    nonzero
 }
+
 unsafe fn correct_format(f_ret: *mut u16) -> quirc_decode_error_t {
     let mut u: u16 = *f_ret;
     let mut s: [u8; 64] = [0; 64];
@@ -291,7 +295,7 @@ unsafe fn correct_format(f_ret: *mut u16) -> quirc_decode_error_t {
     /* Evaluate U (received codeword) at each of alpha_1 .. alpha_6
      * to get S_1 .. S_6 (but we index them from 0).
      */
-    if format_syndromes(u, s.as_mut_ptr()) == 0 {
+    if format_syndromes(u, &mut s) == 0 {
         return QUIRC_SUCCESS;
     }
     berlekamp_massey(&s, 3 * 2, &GF16, &mut sigma);
@@ -303,7 +307,7 @@ unsafe fn correct_format(f_ret: *mut u16) -> quirc_decode_error_t {
         }
         i += 1
     }
-    if format_syndromes(u, s.as_mut_ptr()) != 0 {
+    if format_syndromes(u, &mut s) != 0 {
         return QUIRC_ERROR_FORMAT_ECC;
     }
     *f_ret = u;
@@ -311,17 +315,17 @@ unsafe fn correct_format(f_ret: *mut u16) -> quirc_decode_error_t {
 }
 
 #[inline]
-unsafe fn grid_bit(code: *const Code, x: i32, y: i32) -> i32 {
-    let p: i32 = y * (*code).size + x;
-    (*code).cell_bitmap[(p >> 3) as usize] as i32 >> (p & 7) & 1
+fn grid_bit(code: &Code, x: i32, y: i32) -> i32 {
+    let p: i32 = y * code.size + x;
+    code.cell_bitmap[(p >> 3) as usize] as i32 >> (p & 7) & 1
 }
 
-unsafe fn read_format(code: *const Code, mut data: *mut Data, which: i32) -> quirc_decode_error_t {
+unsafe fn read_format(code: &Code, mut data: *mut Data, which: i32) -> quirc_decode_error_t {
     let mut format: u16 = 0 as u16;
     if which != 0 {
         let mut i = 0;
         while i < 7 {
-            format = ((format as i32) << 1 | grid_bit(code, 8, (*code).size - 1 - i)) as u16;
+            format = ((format as i32) << 1 | grid_bit(code, 8, code.size - 1 - i)) as u16;
             i += 1
         }
         i = 0;
@@ -346,25 +350,26 @@ unsafe fn read_format(code: *const Code, mut data: *mut Data, which: i32) -> qui
     let fdata = (format as i32 >> 10) as u16;
     (*data).ecc_level = EccLevel::from_i32(fdata as i32 >> 3).unwrap();
     (*data).mask = fdata as i32 & 7;
-    return QUIRC_SUCCESS;
+
+    QUIRC_SUCCESS
 }
-unsafe fn mask_bit(mask: i32, i: i32, j: i32) -> i32 {
+
+fn mask_bit(mask: i32, i: i32, j: i32) -> i32 {
     match mask {
-        0 => return ((i + j) % 2 == 0) as i32,
-        1 => return (i % 2 == 0) as i32,
-        2 => return (j % 3 == 0) as i32,
-        3 => return ((i + j) % 3 == 0) as i32,
-        4 => return ((i / 2 + j / 3) % 2 == 0) as i32,
-        5 => return (i * j % 2 + i * j % 3 == 0) as i32,
-        6 => return ((i * j % 2 + i * j % 3) % 2 == 0) as i32,
-        7 => return ((i * j % 3 + (i + j) % 2) % 2 == 0) as i32,
-        _ => {}
+        0 => ((i + j) % 2 == 0) as i32,
+        1 => (i % 2 == 0) as i32,
+        2 => (j % 3 == 0) as i32,
+        3 => ((i + j) % 3 == 0) as i32,
+        4 => ((i / 2 + j / 3) % 2 == 0) as i32,
+        5 => (i * j % 2 + i * j % 3 == 0) as i32,
+        6 => ((i * j % 2 + i * j % 3) % 2 == 0) as i32,
+        7 => ((i * j % 3 + (i + j) % 2) % 2 == 0) as i32,
+        _ => 0,
     }
-    return 0;
 }
-unsafe fn reserved_cell(version: i32, i: i32, j: i32) -> i32 {
-    let ver: *const quirc_version_info =
-        &*quirc_version_db.as_ptr().offset(version as isize) as *const quirc_version_info;
+
+fn reserved_cell(version: i32, i: i32, j: i32) -> i32 {
+    let ver = &VERSION_DB[version as usize];
     let size: i32 = version * 4 + 17;
     let mut ai: i32 = -1;
     let mut aj: i32 = -1;
@@ -400,10 +405,10 @@ unsafe fn reserved_cell(version: i32, i: i32, j: i32) -> i32 {
     let mut a = 0;
     while a < 7 && (*ver).apat[a as usize] != 0 {
         let p: i32 = (*ver).apat[a as usize];
-        if abs(p - i) < 3 {
+        if (p - i).abs() < 3 {
             ai = a
         }
-        if abs(p - j) < 3 {
+        if (p - j).abs() < 3 {
             aj = a
         }
         a += 1
@@ -422,7 +427,7 @@ unsafe fn reserved_cell(version: i32, i: i32, j: i32) -> i32 {
     }
     return 0;
 }
-unsafe fn read_bit(code: *const Code, data: *mut Data, mut ds: *mut Datastream, i: i32, j: i32) {
+unsafe fn read_bit(code: &Code, data: *mut Data, mut ds: *mut Datastream, i: i32, j: i32) {
     let bitpos: i32 = (*ds).data_bits & 7;
     let bytepos: i32 = (*ds).data_bits >> 3;
     let mut v: i32 = grid_bit(code, j, i);
@@ -434,9 +439,10 @@ unsafe fn read_bit(code: *const Code, data: *mut Data, mut ds: *mut Datastream, 
     }
     (*ds).data_bits += 1;
 }
-unsafe fn read_data(code: *const Code, data: *mut Data, ds: *mut Datastream) {
-    let mut y: i32 = (*code).size - 1;
-    let mut x: i32 = (*code).size - 1;
+
+unsafe fn read_data(code: &Code, data: *mut Data, ds: *mut Datastream) {
+    let mut y: i32 = code.size - 1;
+    let mut x: i32 = code.size - 1;
     let mut dir: i32 = -1;
     while x > 0 {
         if x == 6 {
@@ -449,42 +455,30 @@ unsafe fn read_data(code: *const Code, data: *mut Data, ds: *mut Datastream) {
             read_bit(code, data, ds, y, x - 1);
         }
         y += dir;
-        if y < 0 || y >= (*code).size {
+        if y < 0 || y >= code.size {
             dir = -dir;
             x -= 2;
             y += dir
         }
     }
 }
+
 unsafe fn codestream_ecc(data: *mut Data, mut ds: *mut Datastream) -> quirc_decode_error_t {
-    let ver: *const quirc_version_info =
-        &*quirc_version_db.as_ptr().offset((*data).version as isize) as *const quirc_version_info;
-    let sb_ecc: *const quirc_rs_params =
-        &*(*ver).ecc.as_ptr().offset((*data).ecc_level as isize) as *const quirc_rs_params;
-    let mut lb_ecc: quirc_rs_params = quirc_rs_params {
-        bs: 0,
-        dw: 0,
-        ns: 0,
-    };
-    let lb_count: i32 = ((*ver).data_bytes - (*sb_ecc).bs * (*sb_ecc).ns) / ((*sb_ecc).bs + 1);
-    let bc: i32 = lb_count + (*sb_ecc).ns;
-    let ecc_offset: i32 = (*sb_ecc).dw * bc + lb_count;
-    let mut dst_offset: i32 = 0;
-    memcpy(
-        &mut lb_ecc as *mut quirc_rs_params as *mut libc::c_void,
-        sb_ecc as *const libc::c_void,
-        std::mem::size_of::<quirc_rs_params>(),
-    );
+    let ver = &VERSION_DB[(*data).version as usize];
+    let sb_ecc = &ver.ecc[(*data).ecc_level as usize];
+
+    let lb_count = ((*ver).data_bytes - (*sb_ecc).bs * (*sb_ecc).ns) / ((*sb_ecc).bs + 1);
+    let bc = lb_count + (*sb_ecc).ns;
+    let ecc_offset = (*sb_ecc).dw * bc + lb_count;
+    let mut dst_offset = 0;
+
+    let mut lb_ecc = sb_ecc.clone();
     lb_ecc.dw += 1;
     lb_ecc.bs += 1;
 
     for i in 0..bc {
         let dst = &mut (*ds).data[dst_offset as usize..];
-        let ecc: *const quirc_rs_params = if i < (*sb_ecc).ns {
-            sb_ecc
-        } else {
-            &mut lb_ecc as *mut quirc_rs_params as *const quirc_rs_params
-        };
+        let ecc = if i < (*sb_ecc).ns { sb_ecc } else { &lb_ecc };
         let num_ec = (*ecc).bs - (*ecc).dw;
         for j in 0..(*ecc).dw {
             dst[j as usize] = (*ds).raw[(j * bc + i) as usize];
@@ -508,6 +502,7 @@ unsafe fn codestream_ecc(data: *mut Data, mut ds: *mut Datastream) -> quirc_deco
 unsafe fn bits_remaining(ds: *const Datastream) -> i32 {
     return (*ds).data_bits - (*ds).ptr;
 }
+
 unsafe fn take_bits(mut ds: *mut Datastream, mut len: i32) -> i32 {
     let mut ret: i32 = 0;
     while len != 0 && (*ds).ptr < (*ds).data_bits {
@@ -522,6 +517,7 @@ unsafe fn take_bits(mut ds: *mut Datastream, mut len: i32) -> i32 {
     }
     return ret;
 }
+
 unsafe fn numeric_tuple(mut data: *mut Data, ds: *mut Datastream, bits: i32, digits: i32) -> i32 {
     if bits_remaining(ds) < bits {
         return -1;
@@ -536,6 +532,7 @@ unsafe fn numeric_tuple(mut data: *mut Data, ds: *mut Datastream, bits: i32, dig
     (*data).payload_len += digits;
     return 0;
 }
+
 unsafe fn decode_numeric(data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
     let mut bits: i32 = 14;
     if (*data).version < 10 {
@@ -585,6 +582,7 @@ unsafe fn alpha_tuple(mut data: *mut Data, ds: *mut Datastream, bits: i32, digit
     (*data).payload_len += digits;
     return 0;
 }
+
 unsafe fn decode_alpha(data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
     let mut bits: i32 = 13;
     if (*data).version < 10 {
@@ -610,6 +608,7 @@ unsafe fn decode_alpha(data: *mut Data, ds: *mut Datastream) -> quirc_decode_err
     }
     return QUIRC_SUCCESS;
 }
+
 unsafe fn decode_byte(mut data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
     let mut bits: i32 = 16;
     if (*data).version < 10 {
@@ -631,6 +630,7 @@ unsafe fn decode_byte(mut data: *mut Data, ds: *mut Datastream) -> quirc_decode_
     }
     return QUIRC_SUCCESS;
 }
+
 unsafe fn decode_kanji(mut data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
     let mut bits: i32 = 12;
     if (*data).version < 10 {
@@ -669,6 +669,7 @@ unsafe fn decode_kanji(mut data: *mut Data, ds: *mut Datastream) -> quirc_decode
     }
     return QUIRC_SUCCESS;
 }
+
 unsafe fn decode_eci(mut data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
     if bits_remaining(ds) < 8 {
         return QUIRC_ERROR_DATA_UNDERFLOW;
@@ -697,6 +698,7 @@ unsafe fn decode_eci(mut data: *mut Data, ds: *mut Datastream) -> quirc_decode_e
     }
     return QUIRC_SUCCESS;
 }
+
 unsafe fn decode_payload(mut data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
     while bits_remaining(ds) >= 4 {
         let type_0 = take_bits(ds, 4);
@@ -726,22 +728,18 @@ unsafe fn decode_payload(mut data: *mut Data, ds: *mut Datastream) -> quirc_deco
 }
 
 /// Decode a QR-code, returning the payload data.
-pub unsafe fn quirc_decode(code: *const Code, mut data: *mut Data) -> quirc_decode_error_t {
+pub unsafe fn quirc_decode(code: &Code, mut data: *mut Data) -> quirc_decode_error_t {
     let mut ds: Datastream = Datastream {
         raw: [0; 8896],
         data_bits: 0,
         ptr: 0,
         data: [0; 8896],
     };
-    if ((*code).size - 17) % 4 != 0 {
+    if (code.size - 17) % 4 != 0 {
         return QUIRC_ERROR_INVALID_GRID_SIZE;
     }
-    memset(
-        &mut ds as *mut Datastream as *mut libc::c_void,
-        0,
-        std::mem::size_of::<Datastream>(),
-    );
-    (*data).version = ((*code).size - 17) / 4;
+
+    (*data).version = (code.size - 17) / 4;
     if (*data).version < 1 || (*data).version > 40 {
         return QUIRC_ERROR_INVALID_VERSION;
     }
@@ -762,5 +760,6 @@ pub unsafe fn quirc_decode(code: *const Code, mut data: *mut Data) -> quirc_deco
     if err as u64 != 0 {
         return err;
     }
-    return QUIRC_SUCCESS;
+
+    QUIRC_SUCCESS
 }

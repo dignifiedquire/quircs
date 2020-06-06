@@ -827,8 +827,7 @@ unsafe fn fitness_capstone(q: *const Quirc, index: i32, mut x: i32, mut y: i32) 
 unsafe fn fitness_all(q: *const Quirc, index: i32) -> i32 {
     let qr: *const Grid = &*(*q).grids.as_ptr().offset(index as isize) as *const Grid;
     let version: i32 = ((*qr).grid_size - 17) / 4;
-    let info: *const quirc_version_info =
-        &*quirc_version_db.as_ptr().offset(version as isize) as *const quirc_version_info;
+    let info = &VERSION_DB[version as usize];
     let mut score: i32 = 0;
     /* Check the timing pattern */
     let mut i = 0;
