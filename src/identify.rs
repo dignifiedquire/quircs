@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use libc::{memcpy, memmove, memset};
 
 use crate::quirc::*;
@@ -115,7 +118,12 @@ fn perspective_unmap(c: &[f64; 8], in_0: &Point, u: &mut f64, v: &mut f64) {
 
 const FLOOD_FILL_MAX_DEPTH: i32 = 4096;
 
-fn noop(_: *mut libc::c_void, _: i32, _: i32, _: i32) {}
+#[derive(Clone)]
+enum UserData<'a> {
+    Region(Rc<RefCell<&'a mut Region>>),
+    Polygon(Rc<RefCell<&'a mut PolygonScoreData>>),
+    None,
+}
 
 unsafe fn flood_fill_seed<F>(
     q: *mut Quirc,
@@ -124,10 +132,10 @@ unsafe fn flood_fill_seed<F>(
     from: i32,
     to: i32,
     func: Option<&F>,
-    user_data: *mut libc::c_void,
+    user_data: UserData<'_>,
     depth: i32,
 ) where
-    F: Fn(*mut libc::c_void, i32, i32, i32),
+    F: Fn(UserData<'_>, i32, i32, i32),
 {
     let mut left: i32 = x;
     let mut right: i32 = x;
@@ -151,7 +159,7 @@ unsafe fn flood_fill_seed<F>(
         i += 1
     }
     if func.is_some() {
-        func.expect("non-null function pointer")(user_data, y, left, right);
+        func.expect("non-null function pointer")(user_data.clone(), y, left, right);
     }
     /* Seed new flood-fills */
     if y > 0 {
@@ -162,7 +170,7 @@ unsafe fn flood_fill_seed<F>(
         i = left;
         while i <= right {
             if *row.offset(i as isize) as i32 == from {
-                flood_fill_seed(q, i, y - 1, from, to, func, user_data, depth + 1);
+                flood_fill_seed(q, i, y - 1, from, to, func, user_data.clone(), depth + 1);
             }
             i += 1
         }
@@ -175,7 +183,7 @@ unsafe fn flood_fill_seed<F>(
         i = left;
         while i <= right {
             if *row.offset(i as isize) as i32 == from {
-                flood_fill_seed(q, i, y + 1, from, to, func, user_data, depth + 1);
+                flood_fill_seed(q, i, y + 1, from, to, func, user_data.clone(), depth + 1);
             }
             i += 1
         }
@@ -239,9 +247,11 @@ unsafe fn otsu(q: *const Quirc) -> u8 {
     return threshold;
 }
 
-fn area_count(user_data: *mut libc::c_void, _y: i32, left: i32, right: i32) {
-    unsafe {
-        (*(user_data as *mut Region)).count += right - left + 1;
+fn area_count(user_data: UserData<'_>, _y: i32, left: i32, right: i32) {
+    if let UserData::Region(ref region) = user_data {
+        region.borrow_mut().count += right - left + 1;
+    } else {
+        panic!("invalid user data");
     }
 }
 
@@ -278,53 +288,57 @@ unsafe fn region_code(q: *mut Quirc, x: i32, y: i32) -> i32 {
         pixel,
         region,
         Some(&area_count),
-        &mut (*q).regions[region as usize] as *mut _ as *mut libc::c_void,
+        UserData::Region(Rc::new(RefCell::new(&mut (*q).regions[region as usize]))),
         0,
     );
 
-    return region;
+    region
 }
 
-fn find_one_corner(user_data: *mut libc::c_void, y: i32, left: i32, right: i32) {
-    unsafe {
+fn find_one_corner(user_data: UserData<'_>, y: i32, left: i32, right: i32) {
+    if let UserData::Polygon(ref psd) = user_data {
+        let mut psd = psd.borrow_mut();
         let xs: [i32; 2] = [left, right];
-        let mut psd = user_data as *mut PolygonScoreData;
-        let dy: i32 = y - (*psd).ref_0.y;
+        let dy: i32 = y - psd.ref_0.y;
 
-        let mut i = 0;
-        while i < 2 {
-            let dx: i32 = xs[i as usize] - (*psd).ref_0.x;
-            let d: i32 = dx * dx + dy * dy;
-            if d > (*psd).scores[0] {
-                (*psd).scores[0] = d;
-                (*(*psd).corners.offset(0)).x = xs[i as usize];
-                (*(*psd).corners.offset(0)).y = y
+        for i in 0..2 {
+            let dx = xs[i as usize] - (*psd).ref_0.x;
+            let d = dx * dx + dy * dy;
+            if d > psd.scores[0] {
+                psd.scores[0] = d;
+                unsafe {
+                    (*psd.corners.offset(0)).x = xs[i as usize];
+                    (*psd.corners.offset(0)).y = y;
+                }
             }
-            i += 1
         }
+    } else {
+        panic!("invalid user data");
     }
 }
 
-fn find_other_corners(user_data: *mut libc::c_void, y: i32, left: i32, right: i32) {
-    unsafe {
+fn find_other_corners(user_data: UserData<'_>, y: i32, left: i32, right: i32) {
+    if let UserData::Polygon(ref psd) = user_data {
+        let mut psd = psd.borrow_mut();
         let xs: [i32; 2] = [left, right];
-        let mut psd = user_data as *mut PolygonScoreData;
-        let mut i = 0;
-        while i < 2 {
-            let up: i32 = xs[i as usize] * (*psd).ref_0.x + y * (*psd).ref_0.y;
-            let right_0: i32 = xs[i as usize] * -(*psd).ref_0.y + y * (*psd).ref_0.x;
+
+        for i in 0..2 {
+            let up: i32 = xs[i as usize] * psd.ref_0.x + y * psd.ref_0.y;
+            let right_0: i32 = xs[i as usize] * -psd.ref_0.y + y * psd.ref_0.x;
             let scores: [i32; 4] = [up, right_0, -up, -right_0];
-            let mut j = 0;
-            while j < 4 {
-                if scores[j as usize] > (*psd).scores[j as usize] {
-                    (*psd).scores[j as usize] = scores[j as usize];
-                    (*(*psd).corners.offset(j as isize)).x = xs[i as usize];
-                    (*(*psd).corners.offset(j as isize)).y = y
+
+            for j in 0..4 {
+                if scores[j as usize] > psd.scores[j as usize] {
+                    psd.scores[j as usize] = scores[j as usize];
+                    unsafe {
+                        (*psd.corners.offset(j as isize)).x = xs[i as usize];
+                        (*psd.corners.offset(j as isize)).y = y;
+                    }
                 }
-                j += 1
             }
-            i += 1
         }
+    } else {
+        panic!("invalid user data");
     }
 }
 
@@ -349,7 +363,7 @@ unsafe fn find_region_corners(q: *mut Quirc, rcode: i32, ref_0: *const Point, co
         rcode,
         1,
         Some(&find_one_corner),
-        &mut psd as *mut _ as *mut libc::c_void,
+        UserData::Polygon(Rc::new(RefCell::new(&mut psd))),
         0,
     );
     psd.ref_0.x = (*psd.corners.offset(0)).x - psd.ref_0.x;
@@ -376,7 +390,7 @@ unsafe fn find_region_corners(q: *mut Quirc, rcode: i32, ref_0: *const Point, co
         1,
         rcode,
         Some(&find_other_corners),
-        &mut psd as *mut _ as *mut libc::c_void,
+        UserData::Polygon(Rc::new(RefCell::new(&mut psd))),
         0,
     );
 }
@@ -552,20 +566,23 @@ unsafe fn find_alignment_pattern(q: *mut Quirc, index: i32) {
     }
 }
 
-fn find_leftmost_to_line(user_data: *mut libc::c_void, y: i32, left: i32, right: i32) {
-    unsafe {
+fn find_leftmost_to_line(user_data: UserData<'_>, y: i32, left: i32, right: i32) {
+    if let UserData::Polygon(ref psd) = user_data {
+        let mut psd = psd.borrow_mut();
         let xs: [i32; 2] = [left, right];
-        let mut psd: *mut PolygonScoreData = user_data as *mut PolygonScoreData;
-        let mut i = 0;
-        while i < 2 {
-            let d: i32 = -(*psd).ref_0.y * xs[i as usize] + (*psd).ref_0.x * y;
-            if d < (*psd).scores[0] {
-                (*psd).scores[0] = d;
-                (*(*psd).corners.offset(0)).x = xs[i as usize];
-                (*(*psd).corners.offset(0)).y = y
+
+        for i in 0..2 {
+            let d = -psd.ref_0.y * xs[i as usize] + psd.ref_0.x * y;
+            if d < psd.scores[0] {
+                psd.scores[0] = d;
+                unsafe {
+                    (*psd.corners.offset(0)).x = xs[i as usize];
+                    (*psd.corners.offset(0)).y = y;
+                }
             }
-            i += 1
         }
+    } else {
+        panic!("invalid user data");
     }
 }
 
@@ -1064,14 +1081,14 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: i32, b: i32, mut c: i32) {
                     );
                     psd.corners = &mut (*qr).align;
                     psd.scores[0] = -hd.y * (*qr).align.x + hd.x * (*qr).align.y;
-                    flood_fill_seed::<fn(*mut libc::c_void, i32, i32, i32) -> ()>(
+                    flood_fill_seed::<fn(UserData<'_>, i32, i32, i32) -> ()>(
                         q,
                         (*reg).seed.x,
                         (*reg).seed.y,
                         (*qr).align_region,
                         1,
                         None,
-                        0 as *mut libc::c_void,
+                        UserData::None,
                         0,
                     );
                     flood_fill_seed(
@@ -1081,7 +1098,7 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: i32, b: i32, mut c: i32) {
                         1,
                         (*qr).align_region,
                         Some(&find_leftmost_to_line),
-                        &mut psd as *mut PolygonScoreData as *mut libc::c_void,
+                        UserData::Polygon(Rc::new(RefCell::new(&mut psd))),
                         0,
                     );
                 }
