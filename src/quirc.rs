@@ -115,7 +115,7 @@ pub unsafe fn quirc_new() -> *mut Quirc {
     if q.is_null() {
         return 0 as *mut Quirc;
     }
-    memset(q as *mut libc::c_void, 0i32, ::std::mem::size_of::<Quirc>());
+    memset(q as *mut libc::c_void, 0, ::std::mem::size_of::<Quirc>());
     q
 }
 
@@ -124,7 +124,7 @@ pub unsafe fn quirc_destroy(q: *mut Quirc) {
     free((*q).image as *mut libc::c_void);
     /* q->pixels may alias q->image when their type representation is of the
     same size, so we need to be careful here to avoid a double free */
-    if 0i32 == 0 {
+    if 0 == 0 {
         free((*q).pixels as *mut libc::c_void);
     }
     free(q as *mut libc::c_void);
@@ -170,7 +170,7 @@ pub unsafe fn quirc_resize(mut q: *mut Quirc, w: usize, h: usize) -> libc::c_int
             min,
         );
         /* alloc a new buffer for q->pixels if needed */
-        if 0i32 == 0 {
+        if 0 == 0 {
             pixels = calloc(newdim, std::mem::size_of::<quirc_pixel_t>()) as *mut quirc_pixel_t;
             if pixels.is_null() {
                 current_block = 11234461503687749102;
@@ -188,11 +188,11 @@ pub unsafe fn quirc_resize(mut q: *mut Quirc, w: usize, h: usize) -> libc::c_int
                 (*q).h = h;
                 free((*q).image as *mut libc::c_void);
                 (*q).image = image;
-                if 0i32 == 0 {
+                if 0 == 0 {
                     free((*q).pixels as *mut libc::c_void);
                     (*q).pixels = pixels
                 }
-                return 0i32;
+                return 0;
             }
         }
     }
@@ -200,7 +200,7 @@ pub unsafe fn quirc_resize(mut q: *mut Quirc, w: usize, h: usize) -> libc::c_int
     /* NOTREACHED */
     free(image as *mut libc::c_void);
     free(pixels as *mut libc::c_void);
-    -1i32
+    -1
 }
 
 // Limits on the maximum size of QR-codes and their content.
@@ -262,7 +262,7 @@ static mut error_table: [*const libc::c_char; 8] = [
 ];
 
 pub unsafe fn quirc_strerror(err: quirc_decode_error_t) -> *const libc::c_char {
-    if err as libc::c_uint >= 0i32 as libc::c_uint
+    if err as libc::c_uint >= 0 as libc::c_uint
         && (err as libc::c_ulong)
             < (::std::mem::size_of::<[*const libc::c_char; 8]>() as libc::c_ulong)
                 .wrapping_div(::std::mem::size_of::<*const libc::c_char>() as libc::c_ulong)

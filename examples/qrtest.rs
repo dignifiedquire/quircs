@@ -204,8 +204,8 @@ pub struct result_info {
     pub total_time: libc::c_uint,
 }
 
-static mut want_verbose: libc::c_int = 1i32;
-static mut want_cell_dump: libc::c_int = 0i32;
+static mut want_verbose: libc::c_int = 1;
+static mut want_cell_dump: libc::c_int = 0;
 static mut decoder: *mut Quirc = 0 as *const Quirc as *mut Quirc;
 
 unsafe fn print_result(name: *const libc::c_char, info: *mut result_info) {
@@ -224,7 +224,7 @@ unsafe fn print_result(name: *const libc::c_char, info: *mut result_info) {
     if (*info).id_count != 0 {
         printf(
             b", %d%% success rate\x00" as *const u8 as *const libc::c_char,
-            ((*info).decode_count * 100i32 + (*info).id_count / 2i32) / (*info).id_count,
+            ((*info).decode_count * 100 + (*info).id_count / 2) / (*info).id_count,
         );
     }
     printf(b"\n\x00" as *const u8 as *const libc::c_char);
@@ -290,8 +290,8 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
     };
 
     clock_gettime(_CLOCK_PROCESS_CPUTIME_ID, &mut tp);
-    let mut start = (tp.tv_sec * 1000i32 as libc::c_long + tp.tv_nsec / 1000000i32 as libc::c_long)
-        as libc::c_uint;
+    let mut start =
+        (tp.tv_sec * 1000 as libc::c_long + tp.tv_nsec / 1000000 as libc::c_long) as libc::c_uint;
     let total_start = start;
 
     let ret = if path.extension().unwrap() == "jpg" || path.extension().unwrap() == "jpeg" {
@@ -303,22 +303,22 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
     };
 
     clock_gettime(_CLOCK_PROCESS_CPUTIME_ID, &mut tp);
-    (*info).load_time = ((tp.tv_sec * 1000i32 as libc::c_long
-        + tp.tv_nsec / 1000000i32 as libc::c_long) as libc::c_uint)
+    (*info).load_time = ((tp.tv_sec * 1000 as libc::c_long + tp.tv_nsec / 1000000 as libc::c_long)
+        as libc::c_uint)
         .wrapping_sub(start);
-    if ret < 0i32 {
+    if ret < 0 {
         panic!("{}: load failed", path.display());
     }
     clock_gettime(_CLOCK_PROCESS_CPUTIME_ID, &mut tp);
-    start = (tp.tv_sec * 1000i32 as libc::c_long + tp.tv_nsec / 1000000i32 as libc::c_long)
-        as libc::c_uint;
+    start =
+        (tp.tv_sec * 1000 as libc::c_long + tp.tv_nsec / 1000000 as libc::c_long) as libc::c_uint;
     quirc_end(decoder);
     clock_gettime(_CLOCK_PROCESS_CPUTIME_ID, &mut tp);
-    (*info).identify_time = ((tp.tv_sec * 1000i32 as libc::c_long
-        + tp.tv_nsec / 1000000i32 as libc::c_long) as libc::c_uint)
+    (*info).identify_time = ((tp.tv_sec * 1000 as libc::c_long
+        + tp.tv_nsec / 1000000 as libc::c_long) as libc::c_uint)
         .wrapping_sub(start);
     (*info).id_count = quirc_count(decoder);
-    let mut i = 0i32;
+    let mut i = 0;
     while i < (*info).id_count {
         let mut code: quirc_code = quirc_code {
             corners: [quirc_point { x: 0, y: 0 }; 4],
@@ -342,8 +342,7 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
     }
     clock_gettime(_CLOCK_PROCESS_CPUTIME_ID, &mut tp);
     (*info).total_time = (*info).total_time.wrapping_add(
-        ((tp.tv_sec * 1000i32 as libc::c_long + tp.tv_nsec / 1000000i32 as libc::c_long)
-            as libc::c_uint)
+        ((tp.tv_sec * 1000 as libc::c_long + tp.tv_nsec / 1000000 as libc::c_long) as libc::c_uint)
             .wrapping_sub(total_start),
     );
     println!(
@@ -356,7 +355,7 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
         (*info).decode_count,
     );
     if want_cell_dump != 0 || want_verbose != 0 {
-        i = 0i32;
+        i = 0;
         while i < (*info).id_count {
             let mut code_0: quirc_code = quirc_code {
                 corners: [quirc_point { x: 0, y: 0 }; 4],
@@ -393,8 +392,8 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
             i += 1
         }
     }
-    (*info).file_count = 1i32;
-    return 1i32;
+    (*info).file_count = 1;
+    return 1;
 }
 
 unsafe fn test_scan(path: &str, info: *mut result_info) -> libc::c_int {
@@ -410,7 +409,7 @@ unsafe fn run_tests(paths: &[String]) -> libc::c_int {
         identify_time: 0,
         total_time: 0,
     };
-    let mut count: libc::c_int = 0i32;
+    let mut count: libc::c_int = 0;
     decoder = quirc_new();
     assert!(!decoder.is_null(), "quirc_new");
 
@@ -430,7 +429,7 @@ unsafe fn run_tests(paths: &[String]) -> libc::c_int {
     );
     memset(
         &mut sum as *mut result_info as *mut libc::c_void,
-        0i32,
+        0,
         ::std::mem::size_of::<result_info>() as libc::c_ulong,
     );
 
@@ -443,16 +442,16 @@ unsafe fn run_tests(paths: &[String]) -> libc::c_int {
             identify_time: 0,
             total_time: 0,
         };
-        if test_scan(path, &mut info) > 0i32 {
+        if test_scan(path, &mut info) > 0 {
             add_result(&mut sum, &mut info);
             count += 1
         }
     }
-    if count > 1i32 {
+    if count > 1 {
         print_result(b"TOTAL\x00" as *const u8 as *const libc::c_char, &mut sum);
     }
     quirc_destroy(decoder);
-    return 0i32;
+    return 0;
 }
 unsafe fn main_0(args: Vec<String>) -> libc::c_int {
     println!("quirc test program");
