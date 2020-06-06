@@ -18,24 +18,24 @@ struct Datastream {
 #[repr(C)]
 struct GaloisField {
     pub p: i32,
-    pub log: *const u8,
-    pub exp: *const u8,
+    pub log: &'static [u8],
+    pub exp: &'static [u8],
 }
 
-static mut GF16_EXP: [u8; 16] = [
+static GF16_EXP: [u8; 16] = [
     0x1, 0x2, 0x4, 0x8, 0x3, 0x6, 0xc, 0xb, 0x5, 0xa, 0x7, 0xe, 0xf, 0xd, 0x9, 0x1,
 ];
-static mut GF16_LOG: [u8; 16] = [
+static GF16_LOG: [u8; 16] = [
     0, 0xf, 0x1, 0x4, 0x2, 0x8, 0x5, 0xa, 0x3, 0xe, 0x9, 0x7, 0x6, 0xd, 0xb, 0xc,
 ];
 
-static mut GF16: GaloisField = GaloisField {
+static GF16: GaloisField = GaloisField {
     p: 15,
-    log: unsafe { GF16_LOG.as_ptr() },
-    exp: unsafe { GF16_EXP.as_ptr() },
+    log: &GF16_LOG,
+    exp: &GF16_EXP,
 };
 
-static mut GF256_EXP: [u8; 256] = [
+static GF256_EXP: [u8; 256] = [
     0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x1d, 0x3a, 0x74, 0xe8, 0xcd, 0x87, 0x13, 0x26,
     0x4c, 0x98, 0x2d, 0x5a, 0xb4, 0x75, 0xea, 0xc9, 0x8f, 0x3, 0x6, 0xc, 0x18, 0x30, 0x60, 0xc0,
     0x9d, 0x27, 0x4e, 0x9c, 0x25, 0x4a, 0x94, 0x35, 0x6a, 0xd4, 0xb5, 0x77, 0xee, 0xc1, 0x9f, 0x23,
@@ -53,7 +53,7 @@ static mut GF256_EXP: [u8; 256] = [
     0x12, 0x24, 0x48, 0x90, 0x3d, 0x7a, 0xf4, 0xf5, 0xf7, 0xf3, 0xfb, 0xeb, 0xcb, 0x8b, 0xb, 0x16,
     0x2c, 0x58, 0xb0, 0x7d, 0xfa, 0xe9, 0xcf, 0x83, 0x1b, 0x36, 0x6c, 0xd8, 0xad, 0x47, 0x8e, 0x1,
 ];
-static mut GF256_LOG: [u8; 256] = [
+static GF256_LOG: [u8; 256] = [
     0, 0xff, 0x1, 0x19, 0x2, 0x32, 0x1a, 0xc6, 0x3, 0xdf, 0x33, 0xee, 0x1b, 0x68, 0xc7, 0x4b, 0x4,
     0x64, 0xe0, 0xe, 0x34, 0x8d, 0xef, 0x81, 0x1c, 0xc1, 0x69, 0xf8, 0xc8, 0x8, 0x4c, 0x71, 0x5,
     0x8a, 0x65, 0x2f, 0xe1, 0x24, 0xf, 0x21, 0x35, 0x93, 0x8e, 0xda, 0xf0, 0x12, 0x82, 0x45, 0x1d,
@@ -72,192 +72,167 @@ static mut GF256_LOG: [u8; 256] = [
     0xae, 0xd5, 0xe9, 0xe6, 0xe7, 0xad, 0xe8, 0x74, 0xd6, 0xf4, 0xea, 0xa8, 0x50, 0x58, 0xaf,
 ];
 
-static mut GF256: GaloisField = GaloisField {
+static GF256: GaloisField = GaloisField {
     p: 255,
-    log: unsafe { GF256_LOG.as_ptr() },
-    exp: unsafe { GF256_EXP.as_ptr() },
+    log: &GF256_LOG,
+    exp: &GF256_EXP,
 };
 
 // -- Polynomial operations
 
-unsafe fn poly_add(dst: *mut u8, src: *const u8, c: u8, shift: i32, gf: *const GaloisField) {
-    let log_c: i32 = *(*gf).log.offset(c as isize) as i32;
+fn poly_add(dst: &mut [u8], src: &[u8], c: u8, shift: i32, gf: &GaloisField) {
     if c == 0 {
         return;
     }
-    let mut i = 0;
-    while i < 64 {
-        let p: i32 = i + shift;
-        let v: u8 = *src.offset(i as isize);
-        if !(p < 0 || p >= 64) {
-            if !(v == 0) {
-                let ref mut fresh0 = *dst.offset(p as isize);
-                *fresh0 = (*fresh0 as i32
-                    ^ *(*gf)
-                        .exp
-                        .offset(((*(*gf).log.offset(v as isize) as i32 + log_c) % (*gf).p) as isize)
-                        as i32) as u8
-            }
+
+    let log_c = gf.log[c as usize] as i32;
+    for i in 0..64 {
+        let p = i + shift as usize;
+        let v = src[i];
+
+        if p < 0 || p >= 64 {
+            continue;
         }
-        i += 1
+        if v == 0 {
+            continue;
+        }
+
+        dst[p] =
+            dst[p] ^ (gf.exp[((gf.log[v as usize] as i32 + log_c) % gf.p) as usize] as i32) as u8;
     }
 }
 
-unsafe fn poly_eval(s: *const u8, x: u8, gf: *const GaloisField) -> u8 {
-    let mut sum: u8 = 0;
-    let log_x: u8 = *(*gf).log.offset(x as isize);
+fn poly_eval(s: &[u8], x: u8, gf: &GaloisField) -> u8 {
     if x == 0 {
-        return *s.offset(0);
+        return s[0];
     }
-    let mut i = 0;
-    while i < 64 {
-        let c: u8 = *s.offset(i as isize);
-        if !(c == 0) {
-            sum = (sum as i32
-                ^ *(*gf).exp.offset(
-                    ((*(*gf).log.offset(c as isize) as i32 + log_x as i32 * i) % (*gf).p) as isize,
-                ) as i32) as u8
+
+    let mut sum = 0;
+    let log_x = gf.log[x as usize];
+
+    for i in 0..64 {
+        let c = s[i as usize];
+        if c == 0 {
+            continue;
         }
-        i += 1
+        sum = (sum as i32
+            ^ gf.exp[((gf.log[c as usize] as i32 + log_x as i32 * i) % gf.p) as usize] as i32)
+            as u8
     }
-    return sum;
+
+    sum
 }
 
 /// Berlekamp-Massey algorithm for finding error locator polynomials.
-unsafe fn berlekamp_massey(s: *const u8, N: i32, gf: *const GaloisField, sigma: *mut u8) {
+fn berlekamp_massey(s: &[u8], N: usize, gf: &GaloisField, sigma: &mut [u8]) {
     let mut C: [u8; 64] = [0; 64];
     let mut B: [u8; 64] = [0; 64];
-    let mut L: i32 = 0;
-    let mut m: i32 = 1;
-    let mut b: u8 = 1;
+    let mut L = 0;
+    let mut m = 1;
+    let mut b = 1;
 
-    memset(
-        B.as_mut_ptr() as *mut libc::c_void,
-        0,
-        std::mem::size_of::<[u8; 64]>(),
-    );
-    memset(
-        C.as_mut_ptr() as *mut libc::c_void,
-        0,
-        std::mem::size_of::<[u8; 64]>(),
-    );
     B[0] = 1;
     C[0] = 1;
-    let mut n = 0;
-    while n < N {
-        let mut d: u8 = *s.offset(n as isize);
+
+    for n in 0..N {
+        let mut d = s[n];
         let mult: u8;
-        let mut i = 1;
-        while i <= L {
-            if C[i as usize] as i32 != 0 && *s.offset((n - i) as isize) as i32 != 0 {
-                d = (d as i32
-                    ^ *(*gf).exp.offset(
-                        ((*(*gf).log.offset(C[i as usize] as isize) as i32
-                            + *(*gf).log.offset(*s.offset((n - i) as isize) as isize) as i32)
-                            % (*gf).p) as isize,
-                    ) as i32) as u8
+        for i in 1..=L {
+            if C[i] as i32 != 0 && s[n - i] as i32 != 0 {
+                let a = gf.log[C[i] as usize] as usize;
+                let b = gf.log[s[n - i] as usize] as usize;
+                let index = (a + b) % gf.p as usize;
+
+                d = ((d as i32) ^ gf.exp[index] as i32) as u8;
             }
-            i += 1
         }
-        mult = *(*gf).exp.offset(
-            (((*gf).p - *(*gf).log.offset(b as isize) as i32
-                + *(*gf).log.offset(d as isize) as i32)
-                % (*gf).p) as isize,
-        );
+
+        mult = gf.exp
+            [((gf.p - gf.log[b as usize] as i32 + gf.log[d as usize] as i32) % gf.p) as usize];
+
         if d == 0 {
             m += 1
         } else if L * 2 <= n {
-            let mut T: [u8; 64] = [0; 64];
-            memcpy(
-                T.as_mut_ptr() as *mut libc::c_void,
-                C.as_mut_ptr() as *const libc::c_void,
-                std::mem::size_of::<[u8; 64]>(),
-            );
-            poly_add(C.as_mut_ptr(), B.as_mut_ptr(), mult, m, gf);
-            memcpy(
-                B.as_mut_ptr() as *mut libc::c_void,
-                T.as_mut_ptr() as *const libc::c_void,
-                std::mem::size_of::<[u8; 64]>(),
-            );
+            let T = C;
+            poly_add(&mut C, &B, mult, m, gf);
+            B.copy_from_slice(&T);
             L = n + 1 - L;
             b = d;
             m = 1
         } else {
-            poly_add(C.as_mut_ptr(), B.as_mut_ptr(), mult, m, gf);
+            poly_add(&mut C, &B, mult, m, gf);
             m += 1
         }
-        n += 1
     }
-    memcpy(
-        sigma as *mut libc::c_void,
-        C.as_mut_ptr() as *const libc::c_void,
-        64,
-    );
+
+    sigma[..64].copy_from_slice(&C);
 }
 
 /// Code stream error correction
 ///
 /// Generator polynomial for GF(2^8) is x^8 + x^4 + x^3 + x^2 + 1
-unsafe fn block_syndromes(data: *const u8, bs: i32, npar: i32, s: *mut u8) -> i32 {
-    let mut nonzero: i32 = 0;
-    memset(s as *mut libc::c_void, 0, 64);
-    let mut i = 0;
-    while i < npar {
-        let mut j = 0;
-        while j < bs {
-            let c: u8 = *data.offset((bs - j - 1) as isize);
-            if !(c == 0) {
-                let ref mut fresh1 = *s.offset(i as isize);
-                *fresh1 = (*fresh1 as i32
-                    ^ GF256_EXP[((GF256_LOG[c as usize] as i32 + i * j) % 255) as usize] as i32)
-                    as u8
-            }
-            j += 1
-        }
-        if *s.offset(i as isize) != 0 {
-            nonzero = 1
-        }
-        i += 1
+fn block_syndromes(data: &[u8], bs: i32, npar: usize, s: &mut [u8]) -> i32 {
+    for val in s.iter_mut().take(64) {
+        *val = 0;
     }
-    return nonzero;
+
+    let mut nonzero = 0;
+
+    for i in 0..npar {
+        for j in 0..bs {
+            let c = data[(bs - j - 1) as usize];
+            if c == 0 {
+                continue;
+            }
+            s[i] = (s[i] as i32
+                ^ GF256_EXP[((GF256_LOG[c as usize] as i32 + i as i32 * j) % 255) as usize] as i32)
+                as u8
+        }
+
+        if s[i] != 0 {
+            nonzero = 1;
+        }
+    }
+
+    nonzero
 }
 
-unsafe fn eloc_poly(omega: *mut u8, s: *const u8, sigma: *const u8, npar: i32) {
+unsafe fn eloc_poly(omega: *mut u8, s: &[u8], sigma: &[u8], npar: usize) {
     memset(omega as *mut libc::c_void, 0, 64);
-    let mut i = 0;
-    while i < npar {
-        let a: u8 = *sigma.offset(i as isize);
-        let log_a: u8 = GF256_LOG[a as usize];
-        if !(a == 0) {
-            let mut j = 0;
-            while j + 1 < 64 {
-                let b: u8 = *s.offset((j + 1) as isize);
-                if i + j >= npar {
-                    break;
-                }
-                if !(b == 0) {
-                    let ref mut fresh2 = *omega.offset((i + j) as isize);
-                    *fresh2 = (*fresh2 as i32
-                        ^ GF256_EXP[((log_a as i32 + GF256_LOG[b as usize] as i32) % 255) as usize]
-                            as i32) as u8
-                }
-                j += 1
-            }
+    for i in 0..npar {
+        let a = sigma[i];
+        let log_a = GF256_LOG[a as usize];
+        if a == 0 {
+            continue;
         }
-        i += 1
+        for j in 0..64 - 1 {
+            let b = s[j + 1];
+            if i + j >= npar {
+                break;
+            }
+            if b == 0 {
+                continue;
+            }
+
+            let ref mut fresh2 = *omega.offset((i + j) as isize);
+            *fresh2 = (*fresh2 as i32
+                ^ GF256_EXP[((log_a as i32 + GF256_LOG[b as usize] as i32) % 255) as usize] as i32)
+                as u8
+        }
     }
 }
-unsafe fn correct_block(data: *mut u8, ecc: *const quirc_rs_params) -> quirc_decode_error_t {
-    let npar: i32 = (*ecc).bs - (*ecc).dw;
+
+unsafe fn correct_block(data: &mut [u8], ecc: *const quirc_rs_params) -> quirc_decode_error_t {
+    let npar = (*ecc).bs as usize - (*ecc).dw as usize;
     let mut s: [u8; 64] = [0; 64];
     let mut sigma: [u8; 64] = [0; 64];
     let mut sigma_deriv: [u8; 64] = [0; 64];
     let mut omega: [u8; 64] = [0; 64];
     /* Compute syndrome vector */
-    if block_syndromes(data, (*ecc).bs, npar, s.as_mut_ptr()) == 0 {
+    if block_syndromes(data, (*ecc).bs, npar, &mut s) == 0 {
         return QUIRC_SUCCESS;
     }
-    berlekamp_massey(s.as_mut_ptr(), npar, &GF256, sigma.as_mut_ptr());
+    berlekamp_massey(&s, npar, &GF256, &mut sigma);
     /* Compute derivative of sigma */
     memset(sigma_deriv.as_mut_ptr() as *mut libc::c_void, 0, 64);
     let mut i = 0;
@@ -266,28 +241,24 @@ unsafe fn correct_block(data: *mut u8, ecc: *const quirc_rs_params) -> quirc_dec
         i += 2
     }
     /* Compute error evaluator polynomial */
-    eloc_poly(
-        omega.as_mut_ptr(),
-        s.as_mut_ptr(),
-        sigma.as_mut_ptr(),
-        npar - 1,
-    );
+    eloc_poly(omega.as_mut_ptr(), &s, &sigma, npar - 1);
     /* Find error locations and magnitudes */
     i = 0;
     while i < (*ecc).bs {
-        let xinv: u8 = GF256_EXP[(255 - i) as usize];
-        if poly_eval(sigma.as_mut_ptr(), xinv, &GF256) == 0 {
-            let sd_x: u8 = poly_eval(sigma_deriv.as_mut_ptr(), xinv, &GF256);
-            let omega_x: u8 = poly_eval(omega.as_mut_ptr(), xinv, &GF256);
-            let error: u8 = GF256_EXP[((255 - GF256_LOG[sd_x as usize] as i32
+        let xinv = GF256_EXP[(255 - i) as usize];
+        if poly_eval(&sigma, xinv, &GF256) == 0 {
+            let sd_x = poly_eval(&sigma_deriv, xinv, &GF256);
+            let omega_x = poly_eval(&omega, xinv, &GF256);
+            let error = GF256_EXP[((255 - GF256_LOG[sd_x as usize] as i32
                 + GF256_LOG[omega_x as usize] as i32)
                 % 255) as usize];
-            let ref mut fresh3 = *data.offset(((*ecc).bs - i - 1) as isize);
-            *fresh3 = (*fresh3 as i32 ^ error as i32) as u8;
+
+            let index = ((*ecc).bs - i - 1) as usize;
+            data[index] = (data[index] as i32 ^ error as i32) as u8;
         }
         i += 1
     }
-    if block_syndromes(data, (*ecc).bs, npar, s.as_mut_ptr()) != 0 {
+    if block_syndromes(data, (*ecc).bs, npar, &mut s) != 0 {
         return QUIRC_ERROR_DATA_ECC;
     }
     return QUIRC_SUCCESS;
@@ -323,11 +294,11 @@ unsafe fn correct_format(f_ret: *mut u16) -> quirc_decode_error_t {
     if format_syndromes(u, s.as_mut_ptr()) == 0 {
         return QUIRC_SUCCESS;
     }
-    berlekamp_massey(s.as_mut_ptr(), 3 * 2, &GF16, sigma.as_mut_ptr());
+    berlekamp_massey(&s, 3 * 2, &GF16, &mut sigma);
     /* Now, find the roots of the polynomial */
     let mut i = 0;
     while i < 15 {
-        if poly_eval(sigma.as_mut_ptr(), GF16_EXP[(15 - i) as usize], &GF16) == 0 {
+        if poly_eval(&sigma, GF16_EXP[(15 - i) as usize], &GF16) == 0 {
             u = (u as i32 ^ 1 << i) as u16
         }
         i += 1
@@ -506,35 +477,33 @@ unsafe fn codestream_ecc(data: *mut Data, mut ds: *mut Datastream) -> quirc_deco
     );
     lb_ecc.dw += 1;
     lb_ecc.bs += 1;
-    let mut i = 0;
-    while i < bc {
-        let dst: *mut u8 = (*ds).data.as_mut_ptr().offset(dst_offset as isize);
+
+    for i in 0..bc {
+        let dst = &mut (*ds).data[dst_offset as usize..];
         let ecc: *const quirc_rs_params = if i < (*sb_ecc).ns {
             sb_ecc
         } else {
             &mut lb_ecc as *mut quirc_rs_params as *const quirc_rs_params
         };
-        let num_ec: i32 = (*ecc).bs - (*ecc).dw;
-        let mut j = 0;
-        while j < (*ecc).dw {
-            *dst.offset(j as isize) = (*ds).raw[(j * bc + i) as usize];
-            j += 1
+        let num_ec = (*ecc).bs - (*ecc).dw;
+        for j in 0..(*ecc).dw {
+            dst[j as usize] = (*ds).raw[(j * bc + i) as usize];
         }
-        j = 0;
-        while j < num_ec {
-            *dst.offset(((*ecc).dw + j) as isize) = (*ds).raw[(ecc_offset + j * bc + i) as usize];
-            j += 1
+        for j in 0..num_ec {
+            dst[((*ecc).dw + j) as usize] = (*ds).raw[(ecc_offset + j * bc + i) as usize];
         }
+
         let err = correct_block(dst, ecc);
         if err as u64 != 0 {
             return err;
         }
         dst_offset += (*ecc).dw;
-        i += 1
     }
+
     (*ds).data_bits = dst_offset * 8;
-    return QUIRC_SUCCESS;
+    QUIRC_SUCCESS
 }
+
 #[inline]
 unsafe fn bits_remaining(ds: *const Datastream) -> i32 {
     return (*ds).data_bits - (*ds).ptr;
