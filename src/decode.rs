@@ -1,12 +1,8 @@
-use libc::{self, abs, memcpy, memset};
+use libc::{abs, memcpy, memset};
 use num_traits::{FromPrimitive, ToPrimitive};
 
 use crate::quirc::*;
 use crate::version_db::*;
-
-pub type uint8_t = libc::c_uchar;
-pub type uint16_t = libc::c_ushort;
-pub type uint32_t = libc::c_uint;
 
 /* ***********************************************************************
  * Decoder algorithm
@@ -14,10 +10,10 @@ pub type uint32_t = libc::c_uint;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct datastream {
-    pub raw: [uint8_t; 8896],
-    pub data_bits: libc::c_int,
-    pub ptr: libc::c_int,
-    pub data: [uint8_t; 8896],
+    pub raw: [u8; 8896],
+    pub data_bits: i32,
+    pub ptr: i32,
+    pub data: [u8; 8896],
 }
 
 /* ***********************************************************************
@@ -26,45 +22,15 @@ pub struct datastream {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct galois_field {
-    pub p: libc::c_int,
-    pub log: *const uint8_t,
-    pub exp: *const uint8_t,
+    pub p: i32,
+    pub log: *const u8,
+    pub exp: *const u8,
 }
-static mut gf16_exp: [uint8_t; 16] = [
-    0x1 as uint8_t,
-    0x2 as uint8_t,
-    0x4 as uint8_t,
-    0x8 as uint8_t,
-    0x3 as uint8_t,
-    0x6 as uint8_t,
-    0xc as uint8_t,
-    0xb as uint8_t,
-    0x5 as uint8_t,
-    0xa as uint8_t,
-    0x7 as uint8_t,
-    0xe as uint8_t,
-    0xf as uint8_t,
-    0xd as uint8_t,
-    0x9 as uint8_t,
-    0x1 as uint8_t,
+static mut gf16_exp: [u8; 16] = [
+    0x1, 0x2, 0x4, 0x8, 0x3, 0x6, 0xc, 0xb, 0x5, 0xa, 0x7, 0xe, 0xf, 0xd, 0x9, 0x1,
 ];
-static mut gf16_log: [uint8_t; 16] = [
-    0 as uint8_t,
-    0xf as uint8_t,
-    0x1 as uint8_t,
-    0x4 as uint8_t,
-    0x2 as uint8_t,
-    0x8 as uint8_t,
-    0x5 as uint8_t,
-    0xa as uint8_t,
-    0x3 as uint8_t,
-    0xe as uint8_t,
-    0x9 as uint8_t,
-    0x7 as uint8_t,
-    0x6 as uint8_t,
-    0xd as uint8_t,
-    0xb as uint8_t,
-    0xc as uint8_t,
+static mut gf16_log: [u8; 16] = [
+    0, 0xf, 0x1, 0x4, 0x2, 0x8, 0x5, 0xa, 0x3, 0xe, 0x9, 0x7, 0x6, 0xd, 0xb, 0xc,
 ];
 static mut gf16: galois_field = unsafe {
     galois_field {
@@ -74,521 +40,41 @@ static mut gf16: galois_field = unsafe {
     }
 };
 
-static mut gf256_exp: [uint8_t; 256] = [
-    0x1 as uint8_t,
-    0x2 as uint8_t,
-    0x4 as uint8_t,
-    0x8 as uint8_t,
-    0x10 as uint8_t,
-    0x20 as uint8_t,
-    0x40 as uint8_t,
-    0x80 as uint8_t,
-    0x1d as uint8_t,
-    0x3a as uint8_t,
-    0x74 as uint8_t,
-    0xe8 as uint8_t,
-    0xcd as uint8_t,
-    0x87 as uint8_t,
-    0x13 as uint8_t,
-    0x26 as uint8_t,
-    0x4c as uint8_t,
-    0x98 as uint8_t,
-    0x2d as uint8_t,
-    0x5a as uint8_t,
-    0xb4 as uint8_t,
-    0x75 as uint8_t,
-    0xea as uint8_t,
-    0xc9 as uint8_t,
-    0x8f as uint8_t,
-    0x3 as uint8_t,
-    0x6 as uint8_t,
-    0xc as uint8_t,
-    0x18 as uint8_t,
-    0x30 as uint8_t,
-    0x60 as uint8_t,
-    0xc0 as uint8_t,
-    0x9d as uint8_t,
-    0x27 as uint8_t,
-    0x4e as uint8_t,
-    0x9c as uint8_t,
-    0x25 as uint8_t,
-    0x4a as uint8_t,
-    0x94 as uint8_t,
-    0x35 as uint8_t,
-    0x6a as uint8_t,
-    0xd4 as uint8_t,
-    0xb5 as uint8_t,
-    0x77 as uint8_t,
-    0xee as uint8_t,
-    0xc1 as uint8_t,
-    0x9f as uint8_t,
-    0x23 as uint8_t,
-    0x46 as uint8_t,
-    0x8c as uint8_t,
-    0x5 as uint8_t,
-    0xa as uint8_t,
-    0x14 as uint8_t,
-    0x28 as uint8_t,
-    0x50 as uint8_t,
-    0xa0 as uint8_t,
-    0x5d as uint8_t,
-    0xba as uint8_t,
-    0x69 as uint8_t,
-    0xd2 as uint8_t,
-    0xb9 as uint8_t,
-    0x6f as uint8_t,
-    0xde as uint8_t,
-    0xa1 as uint8_t,
-    0x5f as uint8_t,
-    0xbe as uint8_t,
-    0x61 as uint8_t,
-    0xc2 as uint8_t,
-    0x99 as uint8_t,
-    0x2f as uint8_t,
-    0x5e as uint8_t,
-    0xbc as uint8_t,
-    0x65 as uint8_t,
-    0xca as uint8_t,
-    0x89 as uint8_t,
-    0xf as uint8_t,
-    0x1e as uint8_t,
-    0x3c as uint8_t,
-    0x78 as uint8_t,
-    0xf0 as uint8_t,
-    0xfd as uint8_t,
-    0xe7 as uint8_t,
-    0xd3 as uint8_t,
-    0xbb as uint8_t,
-    0x6b as uint8_t,
-    0xd6 as uint8_t,
-    0xb1 as uint8_t,
-    0x7f as uint8_t,
-    0xfe as uint8_t,
-    0xe1 as uint8_t,
-    0xdf as uint8_t,
-    0xa3 as uint8_t,
-    0x5b as uint8_t,
-    0xb6 as uint8_t,
-    0x71 as uint8_t,
-    0xe2 as uint8_t,
-    0xd9 as uint8_t,
-    0xaf as uint8_t,
-    0x43 as uint8_t,
-    0x86 as uint8_t,
-    0x11 as uint8_t,
-    0x22 as uint8_t,
-    0x44 as uint8_t,
-    0x88 as uint8_t,
-    0xd as uint8_t,
-    0x1a as uint8_t,
-    0x34 as uint8_t,
-    0x68 as uint8_t,
-    0xd0 as uint8_t,
-    0xbd as uint8_t,
-    0x67 as uint8_t,
-    0xce as uint8_t,
-    0x81 as uint8_t,
-    0x1f as uint8_t,
-    0x3e as uint8_t,
-    0x7c as uint8_t,
-    0xf8 as uint8_t,
-    0xed as uint8_t,
-    0xc7 as uint8_t,
-    0x93 as uint8_t,
-    0x3b as uint8_t,
-    0x76 as uint8_t,
-    0xec as uint8_t,
-    0xc5 as uint8_t,
-    0x97 as uint8_t,
-    0x33 as uint8_t,
-    0x66 as uint8_t,
-    0xcc as uint8_t,
-    0x85 as uint8_t,
-    0x17 as uint8_t,
-    0x2e as uint8_t,
-    0x5c as uint8_t,
-    0xb8 as uint8_t,
-    0x6d as uint8_t,
-    0xda as uint8_t,
-    0xa9 as uint8_t,
-    0x4f as uint8_t,
-    0x9e as uint8_t,
-    0x21 as uint8_t,
-    0x42 as uint8_t,
-    0x84 as uint8_t,
-    0x15 as uint8_t,
-    0x2a as uint8_t,
-    0x54 as uint8_t,
-    0xa8 as uint8_t,
-    0x4d as uint8_t,
-    0x9a as uint8_t,
-    0x29 as uint8_t,
-    0x52 as uint8_t,
-    0xa4 as uint8_t,
-    0x55 as uint8_t,
-    0xaa as uint8_t,
-    0x49 as uint8_t,
-    0x92 as uint8_t,
-    0x39 as uint8_t,
-    0x72 as uint8_t,
-    0xe4 as uint8_t,
-    0xd5 as uint8_t,
-    0xb7 as uint8_t,
-    0x73 as uint8_t,
-    0xe6 as uint8_t,
-    0xd1 as uint8_t,
-    0xbf as uint8_t,
-    0x63 as uint8_t,
-    0xc6 as uint8_t,
-    0x91 as uint8_t,
-    0x3f as uint8_t,
-    0x7e as uint8_t,
-    0xfc as uint8_t,
-    0xe5 as uint8_t,
-    0xd7 as uint8_t,
-    0xb3 as uint8_t,
-    0x7b as uint8_t,
-    0xf6 as uint8_t,
-    0xf1 as uint8_t,
-    0xff as uint8_t,
-    0xe3 as uint8_t,
-    0xdb as uint8_t,
-    0xab as uint8_t,
-    0x4b as uint8_t,
-    0x96 as uint8_t,
-    0x31 as uint8_t,
-    0x62 as uint8_t,
-    0xc4 as uint8_t,
-    0x95 as uint8_t,
-    0x37 as uint8_t,
-    0x6e as uint8_t,
-    0xdc as uint8_t,
-    0xa5 as uint8_t,
-    0x57 as uint8_t,
-    0xae as uint8_t,
-    0x41 as uint8_t,
-    0x82 as uint8_t,
-    0x19 as uint8_t,
-    0x32 as uint8_t,
-    0x64 as uint8_t,
-    0xc8 as uint8_t,
-    0x8d as uint8_t,
-    0x7 as uint8_t,
-    0xe as uint8_t,
-    0x1c as uint8_t,
-    0x38 as uint8_t,
-    0x70 as uint8_t,
-    0xe0 as uint8_t,
-    0xdd as uint8_t,
-    0xa7 as uint8_t,
-    0x53 as uint8_t,
-    0xa6 as uint8_t,
-    0x51 as uint8_t,
-    0xa2 as uint8_t,
-    0x59 as uint8_t,
-    0xb2 as uint8_t,
-    0x79 as uint8_t,
-    0xf2 as uint8_t,
-    0xf9 as uint8_t,
-    0xef as uint8_t,
-    0xc3 as uint8_t,
-    0x9b as uint8_t,
-    0x2b as uint8_t,
-    0x56 as uint8_t,
-    0xac as uint8_t,
-    0x45 as uint8_t,
-    0x8a as uint8_t,
-    0x9 as uint8_t,
-    0x12 as uint8_t,
-    0x24 as uint8_t,
-    0x48 as uint8_t,
-    0x90 as uint8_t,
-    0x3d as uint8_t,
-    0x7a as uint8_t,
-    0xf4 as uint8_t,
-    0xf5 as uint8_t,
-    0xf7 as uint8_t,
-    0xf3 as uint8_t,
-    0xfb as uint8_t,
-    0xeb as uint8_t,
-    0xcb as uint8_t,
-    0x8b as uint8_t,
-    0xb as uint8_t,
-    0x16 as uint8_t,
-    0x2c as uint8_t,
-    0x58 as uint8_t,
-    0xb0 as uint8_t,
-    0x7d as uint8_t,
-    0xfa as uint8_t,
-    0xe9 as uint8_t,
-    0xcf as uint8_t,
-    0x83 as uint8_t,
-    0x1b as uint8_t,
-    0x36 as uint8_t,
-    0x6c as uint8_t,
-    0xd8 as uint8_t,
-    0xad as uint8_t,
-    0x47 as uint8_t,
-    0x8e as uint8_t,
-    0x1 as uint8_t,
+static mut gf256_exp: [u8; 256] = [
+    0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x1d, 0x3a, 0x74, 0xe8, 0xcd, 0x87, 0x13, 0x26,
+    0x4c, 0x98, 0x2d, 0x5a, 0xb4, 0x75, 0xea, 0xc9, 0x8f, 0x3, 0x6, 0xc, 0x18, 0x30, 0x60, 0xc0,
+    0x9d, 0x27, 0x4e, 0x9c, 0x25, 0x4a, 0x94, 0x35, 0x6a, 0xd4, 0xb5, 0x77, 0xee, 0xc1, 0x9f, 0x23,
+    0x46, 0x8c, 0x5, 0xa, 0x14, 0x28, 0x50, 0xa0, 0x5d, 0xba, 0x69, 0xd2, 0xb9, 0x6f, 0xde, 0xa1,
+    0x5f, 0xbe, 0x61, 0xc2, 0x99, 0x2f, 0x5e, 0xbc, 0x65, 0xca, 0x89, 0xf, 0x1e, 0x3c, 0x78, 0xf0,
+    0xfd, 0xe7, 0xd3, 0xbb, 0x6b, 0xd6, 0xb1, 0x7f, 0xfe, 0xe1, 0xdf, 0xa3, 0x5b, 0xb6, 0x71, 0xe2,
+    0xd9, 0xaf, 0x43, 0x86, 0x11, 0x22, 0x44, 0x88, 0xd, 0x1a, 0x34, 0x68, 0xd0, 0xbd, 0x67, 0xce,
+    0x81, 0x1f, 0x3e, 0x7c, 0xf8, 0xed, 0xc7, 0x93, 0x3b, 0x76, 0xec, 0xc5, 0x97, 0x33, 0x66, 0xcc,
+    0x85, 0x17, 0x2e, 0x5c, 0xb8, 0x6d, 0xda, 0xa9, 0x4f, 0x9e, 0x21, 0x42, 0x84, 0x15, 0x2a, 0x54,
+    0xa8, 0x4d, 0x9a, 0x29, 0x52, 0xa4, 0x55, 0xaa, 0x49, 0x92, 0x39, 0x72, 0xe4, 0xd5, 0xb7, 0x73,
+    0xe6, 0xd1, 0xbf, 0x63, 0xc6, 0x91, 0x3f, 0x7e, 0xfc, 0xe5, 0xd7, 0xb3, 0x7b, 0xf6, 0xf1, 0xff,
+    0xe3, 0xdb, 0xab, 0x4b, 0x96, 0x31, 0x62, 0xc4, 0x95, 0x37, 0x6e, 0xdc, 0xa5, 0x57, 0xae, 0x41,
+    0x82, 0x19, 0x32, 0x64, 0xc8, 0x8d, 0x7, 0xe, 0x1c, 0x38, 0x70, 0xe0, 0xdd, 0xa7, 0x53, 0xa6,
+    0x51, 0xa2, 0x59, 0xb2, 0x79, 0xf2, 0xf9, 0xef, 0xc3, 0x9b, 0x2b, 0x56, 0xac, 0x45, 0x8a, 0x9,
+    0x12, 0x24, 0x48, 0x90, 0x3d, 0x7a, 0xf4, 0xf5, 0xf7, 0xf3, 0xfb, 0xeb, 0xcb, 0x8b, 0xb, 0x16,
+    0x2c, 0x58, 0xb0, 0x7d, 0xfa, 0xe9, 0xcf, 0x83, 0x1b, 0x36, 0x6c, 0xd8, 0xad, 0x47, 0x8e, 0x1,
 ];
-static mut gf256_log: [uint8_t; 256] = [
-    0 as uint8_t,
-    0xff as uint8_t,
-    0x1 as uint8_t,
-    0x19 as uint8_t,
-    0x2 as uint8_t,
-    0x32 as uint8_t,
-    0x1a as uint8_t,
-    0xc6 as uint8_t,
-    0x3 as uint8_t,
-    0xdf as uint8_t,
-    0x33 as uint8_t,
-    0xee as uint8_t,
-    0x1b as uint8_t,
-    0x68 as uint8_t,
-    0xc7 as uint8_t,
-    0x4b as uint8_t,
-    0x4 as uint8_t,
-    0x64 as uint8_t,
-    0xe0 as uint8_t,
-    0xe as uint8_t,
-    0x34 as uint8_t,
-    0x8d as uint8_t,
-    0xef as uint8_t,
-    0x81 as uint8_t,
-    0x1c as uint8_t,
-    0xc1 as uint8_t,
-    0x69 as uint8_t,
-    0xf8 as uint8_t,
-    0xc8 as uint8_t,
-    0x8 as uint8_t,
-    0x4c as uint8_t,
-    0x71 as uint8_t,
-    0x5 as uint8_t,
-    0x8a as uint8_t,
-    0x65 as uint8_t,
-    0x2f as uint8_t,
-    0xe1 as uint8_t,
-    0x24 as uint8_t,
-    0xf as uint8_t,
-    0x21 as uint8_t,
-    0x35 as uint8_t,
-    0x93 as uint8_t,
-    0x8e as uint8_t,
-    0xda as uint8_t,
-    0xf0 as uint8_t,
-    0x12 as uint8_t,
-    0x82 as uint8_t,
-    0x45 as uint8_t,
-    0x1d as uint8_t,
-    0xb5 as uint8_t,
-    0xc2 as uint8_t,
-    0x7d as uint8_t,
-    0x6a as uint8_t,
-    0x27 as uint8_t,
-    0xf9 as uint8_t,
-    0xb9 as uint8_t,
-    0xc9 as uint8_t,
-    0x9a as uint8_t,
-    0x9 as uint8_t,
-    0x78 as uint8_t,
-    0x4d as uint8_t,
-    0xe4 as uint8_t,
-    0x72 as uint8_t,
-    0xa6 as uint8_t,
-    0x6 as uint8_t,
-    0xbf as uint8_t,
-    0x8b as uint8_t,
-    0x62 as uint8_t,
-    0x66 as uint8_t,
-    0xdd as uint8_t,
-    0x30 as uint8_t,
-    0xfd as uint8_t,
-    0xe2 as uint8_t,
-    0x98 as uint8_t,
-    0x25 as uint8_t,
-    0xb3 as uint8_t,
-    0x10 as uint8_t,
-    0x91 as uint8_t,
-    0x22 as uint8_t,
-    0x88 as uint8_t,
-    0x36 as uint8_t,
-    0xd0 as uint8_t,
-    0x94 as uint8_t,
-    0xce as uint8_t,
-    0x8f as uint8_t,
-    0x96 as uint8_t,
-    0xdb as uint8_t,
-    0xbd as uint8_t,
-    0xf1 as uint8_t,
-    0xd2 as uint8_t,
-    0x13 as uint8_t,
-    0x5c as uint8_t,
-    0x83 as uint8_t,
-    0x38 as uint8_t,
-    0x46 as uint8_t,
-    0x40 as uint8_t,
-    0x1e as uint8_t,
-    0x42 as uint8_t,
-    0xb6 as uint8_t,
-    0xa3 as uint8_t,
-    0xc3 as uint8_t,
-    0x48 as uint8_t,
-    0x7e as uint8_t,
-    0x6e as uint8_t,
-    0x6b as uint8_t,
-    0x3a as uint8_t,
-    0x28 as uint8_t,
-    0x54 as uint8_t,
-    0xfa as uint8_t,
-    0x85 as uint8_t,
-    0xba as uint8_t,
-    0x3d as uint8_t,
-    0xca as uint8_t,
-    0x5e as uint8_t,
-    0x9b as uint8_t,
-    0x9f as uint8_t,
-    0xa as uint8_t,
-    0x15 as uint8_t,
-    0x79 as uint8_t,
-    0x2b as uint8_t,
-    0x4e as uint8_t,
-    0xd4 as uint8_t,
-    0xe5 as uint8_t,
-    0xac as uint8_t,
-    0x73 as uint8_t,
-    0xf3 as uint8_t,
-    0xa7 as uint8_t,
-    0x57 as uint8_t,
-    0x7 as uint8_t,
-    0x70 as uint8_t,
-    0xc0 as uint8_t,
-    0xf7 as uint8_t,
-    0x8c as uint8_t,
-    0x80 as uint8_t,
-    0x63 as uint8_t,
-    0xd as uint8_t,
-    0x67 as uint8_t,
-    0x4a as uint8_t,
-    0xde as uint8_t,
-    0xed as uint8_t,
-    0x31 as uint8_t,
-    0xc5 as uint8_t,
-    0xfe as uint8_t,
-    0x18 as uint8_t,
-    0xe3 as uint8_t,
-    0xa5 as uint8_t,
-    0x99 as uint8_t,
-    0x77 as uint8_t,
-    0x26 as uint8_t,
-    0xb8 as uint8_t,
-    0xb4 as uint8_t,
-    0x7c as uint8_t,
-    0x11 as uint8_t,
-    0x44 as uint8_t,
-    0x92 as uint8_t,
-    0xd9 as uint8_t,
-    0x23 as uint8_t,
-    0x20 as uint8_t,
-    0x89 as uint8_t,
-    0x2e as uint8_t,
-    0x37 as uint8_t,
-    0x3f as uint8_t,
-    0xd1 as uint8_t,
-    0x5b as uint8_t,
-    0x95 as uint8_t,
-    0xbc as uint8_t,
-    0xcf as uint8_t,
-    0xcd as uint8_t,
-    0x90 as uint8_t,
-    0x87 as uint8_t,
-    0x97 as uint8_t,
-    0xb2 as uint8_t,
-    0xdc as uint8_t,
-    0xfc as uint8_t,
-    0xbe as uint8_t,
-    0x61 as uint8_t,
-    0xf2 as uint8_t,
-    0x56 as uint8_t,
-    0xd3 as uint8_t,
-    0xab as uint8_t,
-    0x14 as uint8_t,
-    0x2a as uint8_t,
-    0x5d as uint8_t,
-    0x9e as uint8_t,
-    0x84 as uint8_t,
-    0x3c as uint8_t,
-    0x39 as uint8_t,
-    0x53 as uint8_t,
-    0x47 as uint8_t,
-    0x6d as uint8_t,
-    0x41 as uint8_t,
-    0xa2 as uint8_t,
-    0x1f as uint8_t,
-    0x2d as uint8_t,
-    0x43 as uint8_t,
-    0xd8 as uint8_t,
-    0xb7 as uint8_t,
-    0x7b as uint8_t,
-    0xa4 as uint8_t,
-    0x76 as uint8_t,
-    0xc4 as uint8_t,
-    0x17 as uint8_t,
-    0x49 as uint8_t,
-    0xec as uint8_t,
-    0x7f as uint8_t,
-    0xc as uint8_t,
-    0x6f as uint8_t,
-    0xf6 as uint8_t,
-    0x6c as uint8_t,
-    0xa1 as uint8_t,
-    0x3b as uint8_t,
-    0x52 as uint8_t,
-    0x29 as uint8_t,
-    0x9d as uint8_t,
-    0x55 as uint8_t,
-    0xaa as uint8_t,
-    0xfb as uint8_t,
-    0x60 as uint8_t,
-    0x86 as uint8_t,
-    0xb1 as uint8_t,
-    0xbb as uint8_t,
-    0xcc as uint8_t,
-    0x3e as uint8_t,
-    0x5a as uint8_t,
-    0xcb as uint8_t,
-    0x59 as uint8_t,
-    0x5f as uint8_t,
-    0xb0 as uint8_t,
-    0x9c as uint8_t,
-    0xa9 as uint8_t,
-    0xa0 as uint8_t,
-    0x51 as uint8_t,
-    0xb as uint8_t,
-    0xf5 as uint8_t,
-    0x16 as uint8_t,
-    0xeb as uint8_t,
-    0x7a as uint8_t,
-    0x75 as uint8_t,
-    0x2c as uint8_t,
-    0xd7 as uint8_t,
-    0x4f as uint8_t,
-    0xae as uint8_t,
-    0xd5 as uint8_t,
-    0xe9 as uint8_t,
-    0xe6 as uint8_t,
-    0xe7 as uint8_t,
-    0xad as uint8_t,
-    0xe8 as uint8_t,
-    0x74 as uint8_t,
-    0xd6 as uint8_t,
-    0xf4 as uint8_t,
-    0xea as uint8_t,
-    0xa8 as uint8_t,
-    0x50 as uint8_t,
-    0x58 as uint8_t,
-    0xaf as uint8_t,
+static mut gf256_log: [u8; 256] = [
+    0, 0xff, 0x1, 0x19, 0x2, 0x32, 0x1a, 0xc6, 0x3, 0xdf, 0x33, 0xee, 0x1b, 0x68, 0xc7, 0x4b, 0x4,
+    0x64, 0xe0, 0xe, 0x34, 0x8d, 0xef, 0x81, 0x1c, 0xc1, 0x69, 0xf8, 0xc8, 0x8, 0x4c, 0x71, 0x5,
+    0x8a, 0x65, 0x2f, 0xe1, 0x24, 0xf, 0x21, 0x35, 0x93, 0x8e, 0xda, 0xf0, 0x12, 0x82, 0x45, 0x1d,
+    0xb5, 0xc2, 0x7d, 0x6a, 0x27, 0xf9, 0xb9, 0xc9, 0x9a, 0x9, 0x78, 0x4d, 0xe4, 0x72, 0xa6, 0x6,
+    0xbf, 0x8b, 0x62, 0x66, 0xdd, 0x30, 0xfd, 0xe2, 0x98, 0x25, 0xb3, 0x10, 0x91, 0x22, 0x88, 0x36,
+    0xd0, 0x94, 0xce, 0x8f, 0x96, 0xdb, 0xbd, 0xf1, 0xd2, 0x13, 0x5c, 0x83, 0x38, 0x46, 0x40, 0x1e,
+    0x42, 0xb6, 0xa3, 0xc3, 0x48, 0x7e, 0x6e, 0x6b, 0x3a, 0x28, 0x54, 0xfa, 0x85, 0xba, 0x3d, 0xca,
+    0x5e, 0x9b, 0x9f, 0xa, 0x15, 0x79, 0x2b, 0x4e, 0xd4, 0xe5, 0xac, 0x73, 0xf3, 0xa7, 0x57, 0x7,
+    0x70, 0xc0, 0xf7, 0x8c, 0x80, 0x63, 0xd, 0x67, 0x4a, 0xde, 0xed, 0x31, 0xc5, 0xfe, 0x18, 0xe3,
+    0xa5, 0x99, 0x77, 0x26, 0xb8, 0xb4, 0x7c, 0x11, 0x44, 0x92, 0xd9, 0x23, 0x20, 0x89, 0x2e, 0x37,
+    0x3f, 0xd1, 0x5b, 0x95, 0xbc, 0xcf, 0xcd, 0x90, 0x87, 0x97, 0xb2, 0xdc, 0xfc, 0xbe, 0x61, 0xf2,
+    0x56, 0xd3, 0xab, 0x14, 0x2a, 0x5d, 0x9e, 0x84, 0x3c, 0x39, 0x53, 0x47, 0x6d, 0x41, 0xa2, 0x1f,
+    0x2d, 0x43, 0xd8, 0xb7, 0x7b, 0xa4, 0x76, 0xc4, 0x17, 0x49, 0xec, 0x7f, 0xc, 0x6f, 0xf6, 0x6c,
+    0xa1, 0x3b, 0x52, 0x29, 0x9d, 0x55, 0xaa, 0xfb, 0x60, 0x86, 0xb1, 0xbb, 0xcc, 0x3e, 0x5a, 0xcb,
+    0x59, 0x5f, 0xb0, 0x9c, 0xa9, 0xa0, 0x51, 0xb, 0xf5, 0x16, 0xeb, 0x7a, 0x75, 0x2c, 0xd7, 0x4f,
+    0xae, 0xd5, 0xe9, 0xe6, 0xe7, 0xad, 0xe8, 0x74, 0xd6, 0xf4, 0xea, 0xa8, 0x50, 0x58, 0xaf,
 ];
 static mut gf256: galois_field = unsafe {
     galois_field {
@@ -600,48 +86,42 @@ static mut gf256: galois_field = unsafe {
 /* ***********************************************************************
  * Polynomial operations
  */
-unsafe fn poly_add(
-    dst: *mut uint8_t,
-    src: *const uint8_t,
-    c: uint8_t,
-    shift: libc::c_int,
-    gf: *const galois_field,
-) {
-    let log_c: libc::c_int = *(*gf).log.offset(c as isize) as libc::c_int;
+unsafe fn poly_add(dst: *mut u8, src: *const u8, c: u8, shift: i32, gf: *const galois_field) {
+    let log_c: i32 = *(*gf).log.offset(c as isize) as i32;
     if c == 0 {
         return;
     }
     let mut i = 0;
     while i < 64 {
-        let p: libc::c_int = i + shift;
-        let v: uint8_t = *src.offset(i as isize);
+        let p: i32 = i + shift;
+        let v: u8 = *src.offset(i as isize);
         if !(p < 0 || p >= 64) {
             if !(v == 0) {
                 let ref mut fresh0 = *dst.offset(p as isize);
-                *fresh0 = (*fresh0 as libc::c_int
-                    ^ *(*gf).exp.offset(
-                        ((*(*gf).log.offset(v as isize) as libc::c_int + log_c) % (*gf).p) as isize,
-                    ) as libc::c_int) as uint8_t
+                *fresh0 = (*fresh0 as i32
+                    ^ *(*gf)
+                        .exp
+                        .offset(((*(*gf).log.offset(v as isize) as i32 + log_c) % (*gf).p) as isize)
+                        as i32) as u8
             }
         }
         i += 1
     }
 }
-unsafe fn poly_eval(s: *const uint8_t, x: uint8_t, gf: *const galois_field) -> uint8_t {
-    let mut sum: uint8_t = 0 as uint8_t;
-    let log_x: uint8_t = *(*gf).log.offset(x as isize);
+unsafe fn poly_eval(s: *const u8, x: u8, gf: *const galois_field) -> u8 {
+    let mut sum: u8 = 0;
+    let log_x: u8 = *(*gf).log.offset(x as isize);
     if x == 0 {
         return *s.offset(0);
     }
     let mut i = 0;
     while i < 64 {
-        let c: uint8_t = *s.offset(i as isize);
+        let c: u8 = *s.offset(i as isize);
         if !(c == 0) {
-            sum = (sum as libc::c_int
+            sum = (sum as i32
                 ^ *(*gf).exp.offset(
-                    ((*(*gf).log.offset(c as isize) as libc::c_int + log_x as libc::c_int * i)
-                        % (*gf).p) as isize,
-                ) as libc::c_int) as uint8_t
+                    ((*(*gf).log.offset(c as isize) as i32 + log_x as i32 * i) % (*gf).p) as isize,
+                ) as i32) as u8
         }
         i += 1
     }
@@ -650,67 +130,60 @@ unsafe fn poly_eval(s: *const uint8_t, x: uint8_t, gf: *const galois_field) -> u
 /* ***********************************************************************
  * Berlekamp-Massey algorithm for finding error locator polynomials.
  */
-unsafe fn berlekamp_massey(
-    s: *const uint8_t,
-    N: libc::c_int,
-    gf: *const galois_field,
-    sigma: *mut uint8_t,
-) {
-    let mut C: [uint8_t; 64] = [0; 64];
-    let mut B: [uint8_t; 64] = [0; 64];
-    let mut L: libc::c_int = 0;
-    let mut m: libc::c_int = 1;
-    let mut b: uint8_t = 1 as uint8_t;
+unsafe fn berlekamp_massey(s: *const u8, N: i32, gf: *const galois_field, sigma: *mut u8) {
+    let mut C: [u8; 64] = [0; 64];
+    let mut B: [u8; 64] = [0; 64];
+    let mut L: i32 = 0;
+    let mut m: i32 = 1;
+    let mut b: u8 = 1;
 
     memset(
         B.as_mut_ptr() as *mut libc::c_void,
         0,
-        std::mem::size_of::<[uint8_t; 64]>(),
+        std::mem::size_of::<[u8; 64]>(),
     );
     memset(
         C.as_mut_ptr() as *mut libc::c_void,
         0,
-        std::mem::size_of::<[uint8_t; 64]>(),
+        std::mem::size_of::<[u8; 64]>(),
     );
-    B[0] = 1 as uint8_t;
-    C[0] = 1 as uint8_t;
+    B[0] = 1;
+    C[0] = 1;
     let mut n = 0;
     while n < N {
-        let mut d: uint8_t = *s.offset(n as isize);
-        let mult: uint8_t;
+        let mut d: u8 = *s.offset(n as isize);
+        let mult: u8;
         let mut i = 1;
         while i <= L {
-            if C[i as usize] as libc::c_int != 0 && *s.offset((n - i) as isize) as libc::c_int != 0
-            {
-                d = (d as libc::c_int
+            if C[i as usize] as i32 != 0 && *s.offset((n - i) as isize) as i32 != 0 {
+                d = (d as i32
                     ^ *(*gf).exp.offset(
-                        ((*(*gf).log.offset(C[i as usize] as isize) as libc::c_int
-                            + *(*gf).log.offset(*s.offset((n - i) as isize) as isize)
-                                as libc::c_int)
+                        ((*(*gf).log.offset(C[i as usize] as isize) as i32
+                            + *(*gf).log.offset(*s.offset((n - i) as isize) as isize) as i32)
                             % (*gf).p) as isize,
-                    ) as libc::c_int) as uint8_t
+                    ) as i32) as u8
             }
             i += 1
         }
         mult = *(*gf).exp.offset(
-            (((*gf).p - *(*gf).log.offset(b as isize) as libc::c_int
-                + *(*gf).log.offset(d as isize) as libc::c_int)
+            (((*gf).p - *(*gf).log.offset(b as isize) as i32
+                + *(*gf).log.offset(d as isize) as i32)
                 % (*gf).p) as isize,
         );
         if d == 0 {
             m += 1
         } else if L * 2 <= n {
-            let mut T: [uint8_t; 64] = [0; 64];
+            let mut T: [u8; 64] = [0; 64];
             memcpy(
                 T.as_mut_ptr() as *mut libc::c_void,
                 C.as_mut_ptr() as *const libc::c_void,
-                std::mem::size_of::<[uint8_t; 64]>(),
+                std::mem::size_of::<[u8; 64]>(),
             );
             poly_add(C.as_mut_ptr(), B.as_mut_ptr(), mult, m, gf);
             memcpy(
                 B.as_mut_ptr() as *mut libc::c_void,
                 T.as_mut_ptr() as *const libc::c_void,
-                std::mem::size_of::<[uint8_t; 64]>(),
+                std::mem::size_of::<[u8; 64]>(),
             );
             L = n + 1 - L;
             b = d;
@@ -732,24 +205,19 @@ unsafe fn berlekamp_massey(
  *
  * Generator polynomial for GF(2^8) is x^8 + x^4 + x^3 + x^2 + 1
  */
-unsafe fn block_syndromes(
-    data: *const uint8_t,
-    bs: libc::c_int,
-    npar: libc::c_int,
-    s: *mut uint8_t,
-) -> libc::c_int {
-    let mut nonzero: libc::c_int = 0;
+unsafe fn block_syndromes(data: *const u8, bs: i32, npar: i32, s: *mut u8) -> i32 {
+    let mut nonzero: i32 = 0;
     memset(s as *mut libc::c_void, 0, 64);
     let mut i = 0;
     while i < npar {
         let mut j = 0;
         while j < bs {
-            let c: uint8_t = *data.offset((bs - j - 1) as isize);
+            let c: u8 = *data.offset((bs - j - 1) as isize);
             if !(c == 0) {
                 let ref mut fresh1 = *s.offset(i as isize);
-                *fresh1 = (*fresh1 as libc::c_int
-                    ^ gf256_exp[((gf256_log[c as usize] as libc::c_int + i * j) % 255) as usize]
-                        as libc::c_int) as uint8_t
+                *fresh1 = (*fresh1 as i32
+                    ^ gf256_exp[((gf256_log[c as usize] as i32 + i * j) % 255) as usize] as i32)
+                    as u8
             }
             j += 1
         }
@@ -760,30 +228,24 @@ unsafe fn block_syndromes(
     }
     return nonzero;
 }
-unsafe fn eloc_poly(
-    omega: *mut uint8_t,
-    s: *const uint8_t,
-    sigma: *const uint8_t,
-    npar: libc::c_int,
-) {
+unsafe fn eloc_poly(omega: *mut u8, s: *const u8, sigma: *const u8, npar: i32) {
     memset(omega as *mut libc::c_void, 0, 64);
     let mut i = 0;
     while i < npar {
-        let a: uint8_t = *sigma.offset(i as isize);
-        let log_a: uint8_t = gf256_log[a as usize];
+        let a: u8 = *sigma.offset(i as isize);
+        let log_a: u8 = gf256_log[a as usize];
         if !(a == 0) {
             let mut j = 0;
             while j + 1 < 64 {
-                let b: uint8_t = *s.offset((j + 1) as isize);
+                let b: u8 = *s.offset((j + 1) as isize);
                 if i + j >= npar {
                     break;
                 }
                 if !(b == 0) {
                     let ref mut fresh2 = *omega.offset((i + j) as isize);
-                    *fresh2 = (*fresh2 as libc::c_int
-                        ^ gf256_exp[((log_a as libc::c_int + gf256_log[b as usize] as libc::c_int)
-                            % 255) as usize] as libc::c_int)
-                        as uint8_t
+                    *fresh2 = (*fresh2 as i32
+                        ^ gf256_exp[((log_a as i32 + gf256_log[b as usize] as i32) % 255) as usize]
+                            as i32) as u8
                 }
                 j += 1
             }
@@ -791,12 +253,12 @@ unsafe fn eloc_poly(
         i += 1
     }
 }
-unsafe fn correct_block(data: *mut uint8_t, ecc: *const quirc_rs_params) -> quirc_decode_error_t {
-    let npar: libc::c_int = (*ecc).bs - (*ecc).dw;
-    let mut s: [uint8_t; 64] = [0; 64];
-    let mut sigma: [uint8_t; 64] = [0; 64];
-    let mut sigma_deriv: [uint8_t; 64] = [0; 64];
-    let mut omega: [uint8_t; 64] = [0; 64];
+unsafe fn correct_block(data: *mut u8, ecc: *const quirc_rs_params) -> quirc_decode_error_t {
+    let npar: i32 = (*ecc).bs - (*ecc).dw;
+    let mut s: [u8; 64] = [0; 64];
+    let mut sigma: [u8; 64] = [0; 64];
+    let mut sigma_deriv: [u8; 64] = [0; 64];
+    let mut omega: [u8; 64] = [0; 64];
     /* Compute syndrome vector */
     if block_syndromes(data, (*ecc).bs, npar, s.as_mut_ptr()) == 0 {
         return QUIRC_SUCCESS;
@@ -819,15 +281,15 @@ unsafe fn correct_block(data: *mut uint8_t, ecc: *const quirc_rs_params) -> quir
     /* Find error locations and magnitudes */
     i = 0;
     while i < (*ecc).bs {
-        let xinv: uint8_t = gf256_exp[(255 - i) as usize];
+        let xinv: u8 = gf256_exp[(255 - i) as usize];
         if poly_eval(sigma.as_mut_ptr(), xinv, &gf256) == 0 {
-            let sd_x: uint8_t = poly_eval(sigma_deriv.as_mut_ptr(), xinv, &gf256);
-            let omega_x: uint8_t = poly_eval(omega.as_mut_ptr(), xinv, &gf256);
-            let error: uint8_t = gf256_exp[((255 - gf256_log[sd_x as usize] as libc::c_int
-                + gf256_log[omega_x as usize] as libc::c_int)
+            let sd_x: u8 = poly_eval(sigma_deriv.as_mut_ptr(), xinv, &gf256);
+            let omega_x: u8 = poly_eval(omega.as_mut_ptr(), xinv, &gf256);
+            let error: u8 = gf256_exp[((255 - gf256_log[sd_x as usize] as i32
+                + gf256_log[omega_x as usize] as i32)
                 % 255) as usize];
             let ref mut fresh3 = *data.offset(((*ecc).bs - i - 1) as isize);
-            *fresh3 = (*fresh3 as libc::c_int ^ error as libc::c_int) as uint8_t
+            *fresh3 = (*fresh3 as i32 ^ error as i32) as u8;
         }
         i += 1
     }
@@ -836,19 +298,17 @@ unsafe fn correct_block(data: *mut uint8_t, ecc: *const quirc_rs_params) -> quir
     }
     return QUIRC_SUCCESS;
 }
-unsafe fn format_syndromes(u: uint16_t, s: *mut uint8_t) -> libc::c_int {
-    let mut nonzero: libc::c_int = 0;
+unsafe fn format_syndromes(u: u16, s: *mut u8) -> i32 {
+    let mut nonzero: i32 = 0;
     memset(s as *mut libc::c_void, 0, 64);
     let mut i = 0;
     while i < 3 * 2 {
-        *s.offset(i as isize) = 0 as uint8_t;
+        *s.offset(i as isize) = 0;
         let mut j = 0;
         while j < 15 {
-            if u as libc::c_int & 1 << j != 0 {
+            if u as i32 & 1 << j != 0 {
                 let ref mut fresh4 = *s.offset(i as isize);
-                *fresh4 = (*fresh4 as libc::c_int
-                    ^ gf16_exp[((i + 1) * j % 15) as usize] as libc::c_int)
-                    as uint8_t
+                *fresh4 = (*fresh4 as i32 ^ gf16_exp[((i + 1) * j % 15) as usize] as i32) as u8;
             }
             j += 1
         }
@@ -859,10 +319,10 @@ unsafe fn format_syndromes(u: uint16_t, s: *mut uint8_t) -> libc::c_int {
     }
     return nonzero;
 }
-unsafe fn correct_format(f_ret: *mut uint16_t) -> quirc_decode_error_t {
-    let mut u: uint16_t = *f_ret;
-    let mut s: [uint8_t; 64] = [0; 64];
-    let mut sigma: [uint8_t; 64] = [0; 64];
+unsafe fn correct_format(f_ret: *mut u16) -> quirc_decode_error_t {
+    let mut u: u16 = *f_ret;
+    let mut s: [u8; 64] = [0; 64];
+    let mut sigma: [u8; 64] = [0; 64];
     /* Evaluate U (received codeword) at each of alpha_1 .. alpha_6
      * to get S_1 .. S_6 (but we index them from 0).
      */
@@ -874,7 +334,7 @@ unsafe fn correct_format(f_ret: *mut uint16_t) -> quirc_decode_error_t {
     let mut i = 0;
     while i < 15 {
         if poly_eval(sigma.as_mut_ptr(), gf16_exp[(15 - i) as usize], &gf16) == 0 {
-            u = (u as libc::c_int ^ 1 << i) as uint16_t
+            u = (u as i32 ^ 1 << i) as u16
         }
         i += 1
     }
@@ -886,70 +346,63 @@ unsafe fn correct_format(f_ret: *mut uint16_t) -> quirc_decode_error_t {
 }
 
 #[inline]
-unsafe fn grid_bit(code: *const quirc_code, x: libc::c_int, y: libc::c_int) -> libc::c_int {
-    let p: libc::c_int = y * (*code).size + x;
-    (*code).cell_bitmap[(p >> 3) as usize] as libc::c_int >> (p & 7) & 1
+unsafe fn grid_bit(code: *const Code, x: i32, y: i32) -> i32 {
+    let p: i32 = y * (*code).size + x;
+    (*code).cell_bitmap[(p >> 3) as usize] as i32 >> (p & 7) & 1
 }
 
-unsafe fn read_format(
-    code: *const quirc_code,
-    mut data: *mut quirc_data,
-    which: libc::c_int,
-) -> quirc_decode_error_t {
-    let mut format: uint16_t = 0 as uint16_t;
+unsafe fn read_format(code: *const Code, mut data: *mut Data, which: i32) -> quirc_decode_error_t {
+    let mut format: u16 = 0 as u16;
     if which != 0 {
         let mut i = 0;
         while i < 7 {
-            format = ((format as libc::c_int) << 1 | grid_bit(code, 8, (*code).size - 1 - i))
-                as uint16_t;
+            format = ((format as i32) << 1 | grid_bit(code, 8, (*code).size - 1 - i)) as u16;
             i += 1
         }
         i = 0;
         while i < 8 {
-            format = ((format as libc::c_int) << 1 | grid_bit(code, (*code).size - 8 + i, 8))
-                as uint16_t;
+            format = ((format as i32) << 1 | grid_bit(code, (*code).size - 8 + i, 8)) as u16;
             i += 1
         }
     } else {
-        static mut xs: [libc::c_int; 15] = [8, 8, 8, 8, 8, 8, 8, 8, 7, 5, 4, 3, 2, 1, 0];
-        static mut ys: [libc::c_int; 15] = [0, 1, 2, 3, 4, 5, 7, 8, 8, 8, 8, 8, 8, 8, 8];
+        static mut xs: [i32; 15] = [8, 8, 8, 8, 8, 8, 8, 8, 7, 5, 4, 3, 2, 1, 0];
+        static mut ys: [i32; 15] = [0, 1, 2, 3, 4, 5, 7, 8, 8, 8, 8, 8, 8, 8, 8];
         let mut i = 14;
         while i >= 0 {
-            format = ((format as libc::c_int) << 1 | grid_bit(code, xs[i as usize], ys[i as usize]))
-                as uint16_t;
+            format = ((format as i32) << 1 | grid_bit(code, xs[i as usize], ys[i as usize])) as u16;
             i -= 1
         }
     }
-    format = (format as libc::c_int ^ 0x5412) as uint16_t;
+    format = (format as i32 ^ 0x5412) as u16;
     let err = correct_format(&mut format);
     if err as u64 != 0 {
         return err;
     }
-    let fdata = (format as libc::c_int >> 10) as uint16_t;
-    (*data).ecc_level = EccLevel::from_i32(fdata as libc::c_int >> 3).unwrap();
-    (*data).mask = fdata as libc::c_int & 7;
+    let fdata = (format as i32 >> 10) as u16;
+    (*data).ecc_level = EccLevel::from_i32(fdata as i32 >> 3).unwrap();
+    (*data).mask = fdata as i32 & 7;
     return QUIRC_SUCCESS;
 }
-unsafe fn mask_bit(mask: libc::c_int, i: libc::c_int, j: libc::c_int) -> libc::c_int {
+unsafe fn mask_bit(mask: i32, i: i32, j: i32) -> i32 {
     match mask {
-        0 => return ((i + j) % 2 == 0) as libc::c_int,
-        1 => return (i % 2 == 0) as libc::c_int,
-        2 => return (j % 3 == 0) as libc::c_int,
-        3 => return ((i + j) % 3 == 0) as libc::c_int,
-        4 => return ((i / 2 + j / 3) % 2 == 0) as libc::c_int,
-        5 => return (i * j % 2 + i * j % 3 == 0) as libc::c_int,
-        6 => return ((i * j % 2 + i * j % 3) % 2 == 0) as libc::c_int,
-        7 => return ((i * j % 3 + (i + j) % 2) % 2 == 0) as libc::c_int,
+        0 => return ((i + j) % 2 == 0) as i32,
+        1 => return (i % 2 == 0) as i32,
+        2 => return (j % 3 == 0) as i32,
+        3 => return ((i + j) % 3 == 0) as i32,
+        4 => return ((i / 2 + j / 3) % 2 == 0) as i32,
+        5 => return (i * j % 2 + i * j % 3 == 0) as i32,
+        6 => return ((i * j % 2 + i * j % 3) % 2 == 0) as i32,
+        7 => return ((i * j % 3 + (i + j) % 2) % 2 == 0) as i32,
         _ => {}
     }
     return 0;
 }
-unsafe fn reserved_cell(version: libc::c_int, i: libc::c_int, j: libc::c_int) -> libc::c_int {
+unsafe fn reserved_cell(version: i32, i: i32, j: i32) -> i32 {
     let ver: *const quirc_version_info =
         &*quirc_version_db.as_ptr().offset(version as isize) as *const quirc_version_info;
-    let size: libc::c_int = version * 4 + 17;
-    let mut ai: libc::c_int = -1;
-    let mut aj: libc::c_int = -1;
+    let size: i32 = version * 4 + 17;
+    let mut ai: i32 = -1;
+    let mut aj: i32 = -1;
     /* Finder + format: top left */
     if i < 9 && j < 9 {
         return 1;
@@ -981,7 +434,7 @@ unsafe fn reserved_cell(version: libc::c_int, i: libc::c_int, j: libc::c_int) ->
     /* Exclude alignment patterns */
     let mut a = 0;
     while a < 7 && (*ver).apat[a as usize] != 0 {
-        let p: libc::c_int = (*ver).apat[a as usize];
+        let p: i32 = (*ver).apat[a as usize];
         if abs(p - i) < 3 {
             ai = a
         }
@@ -1004,29 +457,22 @@ unsafe fn reserved_cell(version: libc::c_int, i: libc::c_int, j: libc::c_int) ->
     }
     return 0;
 }
-unsafe fn read_bit(
-    code: *const quirc_code,
-    data: *mut quirc_data,
-    mut ds: *mut datastream,
-    i: libc::c_int,
-    j: libc::c_int,
-) {
-    let bitpos: libc::c_int = (*ds).data_bits & 7;
-    let bytepos: libc::c_int = (*ds).data_bits >> 3;
-    let mut v: libc::c_int = grid_bit(code, j, i);
+unsafe fn read_bit(code: *const Code, data: *mut Data, mut ds: *mut datastream, i: i32, j: i32) {
+    let bitpos: i32 = (*ds).data_bits & 7;
+    let bytepos: i32 = (*ds).data_bits >> 3;
+    let mut v: i32 = grid_bit(code, j, i);
     if mask_bit((*data).mask, i, j) != 0 {
         v ^= 1
     }
     if v != 0 {
-        (*ds).raw[bytepos as usize] =
-            ((*ds).raw[bytepos as usize] as libc::c_int | 0x80 >> bitpos) as uint8_t
+        (*ds).raw[bytepos as usize] = ((*ds).raw[bytepos as usize] as i32 | 0x80 >> bitpos) as u8;
     }
     (*ds).data_bits += 1;
 }
-unsafe fn read_data(code: *const quirc_code, data: *mut quirc_data, ds: *mut datastream) {
-    let mut y: libc::c_int = (*code).size - 1;
-    let mut x: libc::c_int = (*code).size - 1;
-    let mut dir: libc::c_int = -1;
+unsafe fn read_data(code: *const Code, data: *mut Data, ds: *mut datastream) {
+    let mut y: i32 = (*code).size - 1;
+    let mut x: i32 = (*code).size - 1;
+    let mut dir: i32 = -1;
     while x > 0 {
         if x == 6 {
             x -= 1
@@ -1045,7 +491,7 @@ unsafe fn read_data(code: *const quirc_code, data: *mut quirc_data, ds: *mut dat
         }
     }
 }
-unsafe fn codestream_ecc(data: *mut quirc_data, mut ds: *mut datastream) -> quirc_decode_error_t {
+unsafe fn codestream_ecc(data: *mut Data, mut ds: *mut datastream) -> quirc_decode_error_t {
     let ver: *const quirc_version_info =
         &*quirc_version_db.as_ptr().offset((*data).version as isize) as *const quirc_version_info;
     let sb_ecc: *const quirc_rs_params =
@@ -1055,11 +501,10 @@ unsafe fn codestream_ecc(data: *mut quirc_data, mut ds: *mut datastream) -> quir
         dw: 0,
         ns: 0,
     };
-    let lb_count: libc::c_int =
-        ((*ver).data_bytes - (*sb_ecc).bs * (*sb_ecc).ns) / ((*sb_ecc).bs + 1);
-    let bc: libc::c_int = lb_count + (*sb_ecc).ns;
-    let ecc_offset: libc::c_int = (*sb_ecc).dw * bc + lb_count;
-    let mut dst_offset: libc::c_int = 0;
+    let lb_count: i32 = ((*ver).data_bytes - (*sb_ecc).bs * (*sb_ecc).ns) / ((*sb_ecc).bs + 1);
+    let bc: i32 = lb_count + (*sb_ecc).ns;
+    let ecc_offset: i32 = (*sb_ecc).dw * bc + lb_count;
+    let mut dst_offset: i32 = 0;
     memcpy(
         &mut lb_ecc as *mut quirc_rs_params as *mut libc::c_void,
         sb_ecc as *const libc::c_void,
@@ -1069,13 +514,13 @@ unsafe fn codestream_ecc(data: *mut quirc_data, mut ds: *mut datastream) -> quir
     lb_ecc.bs += 1;
     let mut i = 0;
     while i < bc {
-        let dst: *mut uint8_t = (*ds).data.as_mut_ptr().offset(dst_offset as isize);
+        let dst: *mut u8 = (*ds).data.as_mut_ptr().offset(dst_offset as isize);
         let ecc: *const quirc_rs_params = if i < (*sb_ecc).ns {
             sb_ecc
         } else {
             &mut lb_ecc as *mut quirc_rs_params as *const quirc_rs_params
         };
-        let num_ec: libc::c_int = (*ecc).bs - (*ecc).dw;
+        let num_ec: i32 = (*ecc).bs - (*ecc).dw;
         let mut j = 0;
         while j < (*ecc).dw {
             *dst.offset(j as isize) = (*ds).raw[(j * bc + i) as usize];
@@ -1097,16 +542,16 @@ unsafe fn codestream_ecc(data: *mut quirc_data, mut ds: *mut datastream) -> quir
     return QUIRC_SUCCESS;
 }
 #[inline]
-unsafe fn bits_remaining(ds: *const datastream) -> libc::c_int {
+unsafe fn bits_remaining(ds: *const datastream) -> i32 {
     return (*ds).data_bits - (*ds).ptr;
 }
-unsafe fn take_bits(mut ds: *mut datastream, mut len: libc::c_int) -> libc::c_int {
-    let mut ret: libc::c_int = 0;
+unsafe fn take_bits(mut ds: *mut datastream, mut len: i32) -> i32 {
+    let mut ret: i32 = 0;
     while len != 0 && (*ds).ptr < (*ds).data_bits {
-        let b: uint8_t = (*ds).data[((*ds).ptr >> 3) as usize];
-        let bitpos: libc::c_int = (*ds).ptr & 7;
+        let b: u8 = (*ds).data[((*ds).ptr >> 3) as usize];
+        let bitpos: i32 = (*ds).ptr & 7;
         ret <<= 1;
-        if (b as libc::c_int) << bitpos & 0x80 != 0 {
+        if (b as i32) << bitpos & 0x80 != 0 {
             ret |= 1
         }
         (*ds).ptr += 1;
@@ -1114,27 +559,22 @@ unsafe fn take_bits(mut ds: *mut datastream, mut len: libc::c_int) -> libc::c_in
     }
     return ret;
 }
-unsafe fn numeric_tuple(
-    mut data: *mut quirc_data,
-    ds: *mut datastream,
-    bits: libc::c_int,
-    digits: libc::c_int,
-) -> libc::c_int {
+unsafe fn numeric_tuple(mut data: *mut Data, ds: *mut datastream, bits: i32, digits: i32) -> i32 {
     if bits_remaining(ds) < bits {
         return -1;
     }
     let mut tuple = take_bits(ds, bits);
     let mut i = digits - 1;
     while i >= 0 {
-        (*data).payload[((*data).payload_len + i) as usize] = (tuple % 10 + '0' as i32) as uint8_t;
+        (*data).payload[((*data).payload_len + i) as usize] = (tuple % 10 + '0' as i32) as u8;
         tuple /= 10;
         i -= 1
     }
     (*data).payload_len += digits;
     return 0;
 }
-unsafe fn decode_numeric(data: *mut quirc_data, ds: *mut datastream) -> quirc_decode_error_t {
-    let mut bits: libc::c_int = 14;
+unsafe fn decode_numeric(data: *mut Data, ds: *mut datastream) -> quirc_decode_error_t {
+    let mut bits: i32 = 14;
     if (*data).version < 10 {
         bits = 10
     } else if (*data).version < 27 {
@@ -1164,12 +604,7 @@ unsafe fn decode_numeric(data: *mut quirc_data, ds: *mut datastream) -> quirc_de
     }
     return QUIRC_SUCCESS;
 }
-unsafe fn alpha_tuple(
-    mut data: *mut quirc_data,
-    ds: *mut datastream,
-    bits: libc::c_int,
-    digits: libc::c_int,
-) -> libc::c_int {
+unsafe fn alpha_tuple(mut data: *mut Data, ds: *mut datastream, bits: i32, digits: i32) -> i32 {
     if bits_remaining(ds) < bits {
         return -1;
     }
@@ -1180,15 +615,15 @@ unsafe fn alpha_tuple(
             b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:\x00" as *const u8
                 as *const libc::c_char;
         (*data).payload[((*data).payload_len + digits - i - 1) as usize] =
-            *alpha_map.offset((tuple % 45) as isize) as uint8_t;
+            *alpha_map.offset((tuple % 45) as isize) as u8;
         tuple /= 45;
         i += 1
     }
     (*data).payload_len += digits;
     return 0;
 }
-unsafe fn decode_alpha(data: *mut quirc_data, ds: *mut datastream) -> quirc_decode_error_t {
-    let mut bits: libc::c_int = 13;
+unsafe fn decode_alpha(data: *mut Data, ds: *mut datastream) -> quirc_decode_error_t {
+    let mut bits: i32 = 13;
     if (*data).version < 10 {
         bits = 9
     } else if (*data).version < 27 {
@@ -1212,8 +647,8 @@ unsafe fn decode_alpha(data: *mut quirc_data, ds: *mut datastream) -> quirc_deco
     }
     return QUIRC_SUCCESS;
 }
-unsafe fn decode_byte(mut data: *mut quirc_data, ds: *mut datastream) -> quirc_decode_error_t {
-    let mut bits: libc::c_int = 16;
+unsafe fn decode_byte(mut data: *mut Data, ds: *mut datastream) -> quirc_decode_error_t {
+    let mut bits: i32 = 16;
     if (*data).version < 10 {
         bits = 8
     }
@@ -1228,13 +663,13 @@ unsafe fn decode_byte(mut data: *mut quirc_data, ds: *mut datastream) -> quirc_d
     while i < count {
         let fresh5 = (*data).payload_len;
         (*data).payload_len = (*data).payload_len + 1;
-        (*data).payload[fresh5 as usize] = take_bits(ds, 8) as uint8_t;
+        (*data).payload[fresh5 as usize] = take_bits(ds, 8) as u8;
         i += 1
     }
     return QUIRC_SUCCESS;
 }
-unsafe fn decode_kanji(mut data: *mut quirc_data, ds: *mut datastream) -> quirc_decode_error_t {
-    let mut bits: libc::c_int = 12;
+unsafe fn decode_kanji(mut data: *mut Data, ds: *mut datastream) -> quirc_decode_error_t {
+    let mut bits: i32 = 12;
     if (*data).version < 10 {
         bits = 8
     } else if (*data).version < 27 {
@@ -1249,33 +684,33 @@ unsafe fn decode_kanji(mut data: *mut quirc_data, ds: *mut datastream) -> quirc_
     }
     let mut i = 0;
     while i < count {
-        let d: libc::c_int = take_bits(ds, 13);
-        let msB: libc::c_int = d / 0xc0;
-        let lsB: libc::c_int = d % 0xc0;
-        let intermediate: libc::c_int = msB << 8 | lsB;
-        let sjw: uint16_t;
+        let d: i32 = take_bits(ds, 13);
+        let msB: i32 = d / 0xc0;
+        let lsB: i32 = d % 0xc0;
+        let intermediate: i32 = msB << 8 | lsB;
+        let sjw: u16;
         if intermediate + 0x8140 <= 0x9ffc {
             /* bytes are in the range 0x8140 to 0x9FFC */
-            sjw = (intermediate + 0x8140) as uint16_t
+            sjw = (intermediate + 0x8140) as u16
         } else {
             /* bytes are in the range 0xE040 to 0xEBBF */
-            sjw = (intermediate + 0xc140) as uint16_t
+            sjw = (intermediate + 0xc140) as u16
         }
         let fresh6 = (*data).payload_len;
         (*data).payload_len = (*data).payload_len + 1;
-        (*data).payload[fresh6 as usize] = (sjw as libc::c_int >> 8) as uint8_t;
+        (*data).payload[fresh6 as usize] = (sjw as i32 >> 8) as u8;
         let fresh7 = (*data).payload_len;
         (*data).payload_len = (*data).payload_len + 1;
-        (*data).payload[fresh7 as usize] = (sjw as libc::c_int & 0xff) as uint8_t;
+        (*data).payload[fresh7 as usize] = (sjw as i32 & 0xff) as u8;
         i += 1
     }
     return QUIRC_SUCCESS;
 }
-unsafe fn decode_eci(mut data: *mut quirc_data, ds: *mut datastream) -> quirc_decode_error_t {
+unsafe fn decode_eci(mut data: *mut Data, ds: *mut datastream) -> quirc_decode_error_t {
     if bits_remaining(ds) < 8 {
         return QUIRC_ERROR_DATA_UNDERFLOW;
     }
-    (*data).eci = Eci::from_u32(take_bits(ds, 8) as uint32_t);
+    (*data).eci = Eci::from_u32(take_bits(ds, 8) as u32);
     if (*data).eci.and_then(|e| e.to_u32()).unwrap_or_default() & 0xc0 as libc::c_uint
         == 0x80 as libc::c_uint
     {
@@ -1299,7 +734,7 @@ unsafe fn decode_eci(mut data: *mut quirc_data, ds: *mut datastream) -> quirc_de
     }
     return QUIRC_SUCCESS;
 }
-unsafe fn decode_payload(mut data: *mut quirc_data, ds: *mut datastream) -> quirc_decode_error_t {
+unsafe fn decode_payload(mut data: *mut Data, ds: *mut datastream) -> quirc_decode_error_t {
     while bits_remaining(ds) >= 4 {
         let type_0 = take_bits(ds, 4);
         let err = match type_0 {
@@ -1320,20 +755,15 @@ unsafe fn decode_payload(mut data: *mut quirc_data, ds: *mut datastream) -> quir
         }
     }
     /* Add nul terminator to all payloads */
-    if (*data).payload_len
-        >= ::std::mem::size_of::<[uint8_t; 8896]>() as libc::c_ulong as libc::c_int
-    {
+    if (*data).payload_len >= ::std::mem::size_of::<[u8; 8896]>() as libc::c_ulong as i32 {
         (*data).payload_len -= 1
     }
-    (*data).payload[(*data).payload_len as usize] = 0 as uint8_t;
+    (*data).payload[(*data).payload_len as usize] = 0;
     return QUIRC_SUCCESS;
 }
 
 /// Decode a QR-code, returning the payload data.
-pub unsafe fn quirc_decode(
-    code: *const quirc_code,
-    mut data: *mut quirc_data,
-) -> quirc_decode_error_t {
+pub unsafe fn quirc_decode(code: *const Code, mut data: *mut Data) -> quirc_decode_error_t {
     let mut ds: datastream = datastream {
         raw: [0; 8896],
         data_bits: 0,

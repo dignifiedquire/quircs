@@ -1,85 +1,88 @@
-use libc;
 use num_derive::{FromPrimitive, ToPrimitive};
 
-pub type uint8_t = libc::c_uchar;
-pub type uint16_t = libc::c_ushort;
+pub type Pixel = u16;
+pub type quirc_decode_error_t = u32;
 
-#[derive(Clone)]
-#[repr(C)]
+#[derive(Debug, Clone, Default)]
 pub struct Quirc {
-    pub image: Vec<uint8_t>,
-    pub pixels: Vec<quirc_pixel_t>,
+    pub image: Vec<u8>,
+    pub pixels: Vec<Pixel>,
     pub w: usize,
     pub h: usize,
-    pub regions: Vec<quirc_region>,
-    pub num_capstones: libc::c_int,
-    pub capstones: [quirc_capstone; 32],
-    pub num_grids: libc::c_int,
-    pub grids: [quirc_grid; 8],
+    pub regions: Vec<Region>,
+    pub capstones: Vec<Capstone>,
+    pub grids: Vec<Grid>,
 }
 
 impl Quirc {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Resize the QR-code recognizer. The size of an image must be
+    /// specified before codes can be analyzed.
+    ///
+    /// This function returns 0 on success, or -1 if sufficient memory could  not be allocated.
+    pub fn resize(&mut self, width: usize, height: usize) {
+        let newdim = width * height;
+        self.image.resize(newdim, 0);
+        self.pixels.resize(newdim, 0);
+        self.w = width;
+        self.h = height;
+    }
+
     pub fn num_regions(&self) -> usize {
         self.regions.len()
     }
-}
 
-impl Default for Quirc {
-    fn default() -> Self {
-        Quirc {
-            image: Default::default(),
-            pixels: Default::default(),
-            w: 0,
-            h: 0,
-            regions: Default::default(),
-            num_capstones: 0,
-            capstones: [Default::default(); 32],
-            num_grids: 0,
-            grids: [Default::default(); 8],
-        }
+    pub fn num_capstones(&self) -> usize {
+        self.capstones.len()
+    }
+
+    /// Return the number of QR-codes identified in the last processed image.
+    pub fn count(&self) -> usize {
+        self.grids.len()
     }
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 #[repr(C)]
-pub struct quirc_grid {
-    pub caps: [libc::c_int; 3],
-    pub align_region: libc::c_int,
-    pub align: quirc_point,
-    pub tpep: [quirc_point; 3],
-    pub hscan: libc::c_int,
-    pub vscan: libc::c_int,
-    pub grid_size: libc::c_int,
-    pub c: [libc::c_double; 8],
+pub struct Grid {
+    pub caps: [i32; 3],
+    pub align_region: i32,
+    pub align: Point,
+    pub tpep: [Point; 3],
+    pub hscan: i32,
+    pub vscan: i32,
+    pub grid_size: i32,
+    pub c: [f64; 8],
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 #[repr(C)]
-pub struct quirc_point {
-    pub x: libc::c_int,
-    pub y: libc::c_int,
+pub struct Point {
+    pub x: i32,
+    pub y: i32,
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 #[repr(C)]
-pub struct quirc_capstone {
-    pub ring: libc::c_int,
-    pub stone: libc::c_int,
-    pub corners: [quirc_point; 4],
-    pub center: quirc_point,
-    pub c: [libc::c_double; 8],
-    pub qr_grid: libc::c_int,
+pub struct Capstone {
+    pub ring: i32,
+    pub stone: i32,
+    pub corners: [Point; 4],
+    pub center: Point,
+    pub c: [f64; 8],
+    pub qr_grid: i32,
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 #[repr(C)]
-pub struct quirc_region {
-    pub seed: quirc_point,
-    pub count: libc::c_int,
-    pub capstone: libc::c_int,
+pub struct Region {
+    pub seed: Point,
+    pub count: i32,
+    pub capstone: i32,
 }
-pub type quirc_pixel_t = uint16_t;
-pub type quirc_decode_error_t = libc::c_uint;
 
 pub const QUIRC_ERROR_DATA_UNDERFLOW: quirc_decode_error_t = 7;
 pub const QUIRC_ERROR_DATA_OVERFLOW: quirc_decode_error_t = 6;
@@ -94,9 +97,9 @@ pub const QUIRC_SUCCESS: quirc_decode_error_t = 0;
 /// in the input image.
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct quirc_code {
+pub struct Code {
     /// The four corners of the QR-code, from top left, clockwise
-    pub corners: [quirc_point; 4],
+    pub corners: [Point; 4],
     /// The number of cells across in the QR-code. The cell bitmap
     /// is a bitmask giving the actual values of cells. If the cell
     /// at (x, y) is black, then the following bit is set:
@@ -104,30 +107,30 @@ pub struct quirc_code {
     ///     cell_bitmap[i >> 3] & (1 << (i & 7))
     /// ```
     /// where i = (y * size) + x.
-    pub size: libc::c_int,
-    pub cell_bitmap: [uint8_t; 3917],
+    pub size: i32,
+    pub cell_bitmap: [u8; 3917],
 }
 
 /// This structure holds the decoded QR-code data
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct quirc_data {
+pub struct Data {
     ///  Various parameters of the QR-code. These can mostly be  ignored
     /// if you only care about the data.
-    pub version: libc::c_int,
+    pub version: i32,
     pub ecc_level: EccLevel,
-    pub mask: libc::c_int,
+    pub mask: i32,
     /// This field is the highest-valued data type found in the QR code.
-    pub data_type: libc::c_int,
+    pub data_type: i32,
     /// Data payload. For the Kanji datatype, payload is encoded as Shift-JIS.
     /// For all other datatypes, payload is ASCII text.
-    pub payload: [uint8_t; 8896],
-    pub payload_len: libc::c_int,
+    pub payload: [u8; 8896],
+    pub payload_len: i32,
     /// ECI assignment number
     pub eci: Option<Eci>,
 }
 
-impl Default for quirc_data {
+impl Default for Data {
     fn default() -> Self {
         Self {
             version: 0,
@@ -149,8 +152,7 @@ pub fn quirc_version() -> &'static str {
 /// Construct a new QR-code recognizer. This function will return NULL
 /// if sufficient memory could not be allocated.
 pub unsafe fn quirc_new() -> *mut Quirc {
-    let quirc = Quirc::default();
-    Box::into_raw(Box::new(quirc))
+    Box::into_raw(Box::new(Quirc::new()))
 }
 
 /// Destroy a QR-code recognizer.
@@ -162,20 +164,10 @@ pub unsafe fn quirc_destroy(q: *mut Quirc) {
 /// specified before codes can be analyzed.
 ///
 /// This function returns 0 on success, or -1 if sufficient memory could  not be allocated.
-pub unsafe fn quirc_resize(q: *mut Quirc, w: usize, h: usize) -> libc::c_int {
-    let q = &mut *q;
-    let newdim = w * h;
-    q.image.resize(newdim, 0);
-    q.pixels.resize(newdim, 0);
-    q.w = w;
-    q.h = h;
-
+pub unsafe fn quirc_resize(q: *mut Quirc, w: usize, h: usize) -> i32 {
+    (*q).resize(w, h);
     0
 }
-
-// Limits on the maximum size of QR-codes and their content.
-const QUIRC_MAX_BITMAP: usize = 3917;
-const QUIRC_MAX_PAYLOAD: usize = 8896;
 
 /// QR-code ECC types.
 #[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive)]
@@ -204,46 +196,38 @@ pub enum DataType {
 /// Common character encodings
 #[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive)]
 pub enum Eci {
-    ISO_8859_1 = 1,
-    IBM437 = 2,
-    ISO_8859_2 = 4,
-    ISO_8859_3 = 5,
-    ISO_8859_4 = 6,
-    ISO_8859_5 = 7,
-    ISO_8859_6 = 8,
-    ISO_8859_7 = 9,
-    ISO_8859_8 = 10,
-    ISO_8859_9 = 11,
-    WINDOWS_874 = 13,
-    ISO_8859_13 = 15,
-    ISO_8859_15 = 17,
-    SHIFT_JIS = 20,
-    UTF_8 = 26,
+    Iso8859_1 = 1,
+    Ibm437 = 2,
+    Iso8859_2 = 4,
+    Iso8859_3 = 5,
+    Iso8859_4 = 6,
+    Iso8859_5 = 7,
+    Iso8859_6 = 8,
+    Iso8859_7 = 9,
+    Iso8859_8 = 10,
+    Iso8859_9 = 11,
+    Windows874 = 13,
+    Iso8859_13 = 15,
+    Iso8859_15 = 17,
+    ShiftJis = 20,
+    Utf8 = 26,
 }
 
-/// Return the number of QR-codes identified in the last processed image.
-pub unsafe fn quirc_count(q: *const Quirc) -> libc::c_int {
-    (*q).num_grids
-}
-
-static mut error_table: [*const libc::c_char; 8] = [
-    b"Success\x00" as *const u8 as *const libc::c_char,
-    b"Invalid grid size\x00" as *const u8 as *const libc::c_char,
-    b"Invalid version\x00" as *const u8 as *const libc::c_char,
-    b"Format data ECC failure\x00" as *const u8 as *const libc::c_char,
-    b"ECC failure\x00" as *const u8 as *const libc::c_char,
-    b"Unknown data type\x00" as *const u8 as *const libc::c_char,
-    b"Data overflow\x00" as *const u8 as *const libc::c_char,
-    b"Data underflow\x00" as *const u8 as *const libc::c_char,
+static ERROR_TABLE: [&str; 8] = [
+    "Success",
+    "Invalid grid size",
+    "Invalid version",
+    "Format data ECC failure",
+    "ECC failure",
+    "Unknown data type",
+    "Data overflow",
+    "Data underflow",
 ];
 
-pub unsafe fn quirc_strerror(err: quirc_decode_error_t) -> *const libc::c_char {
-    if err as libc::c_uint >= 0 as libc::c_uint
-        && (err as libc::c_ulong)
-            < (::std::mem::size_of::<[*const libc::c_char; 8]>() as libc::c_ulong)
-                .wrapping_div(::std::mem::size_of::<*const libc::c_char>() as libc::c_ulong)
-    {
-        return error_table[err as usize];
+pub fn quirc_strerror(err: quirc_decode_error_t) -> &'static str {
+    if (err as usize) < ERROR_TABLE.len() {
+        return ERROR_TABLE[err as usize];
     }
-    return b"Unknown error\x00" as *const u8 as *const libc::c_char;
+
+    "Unknown error"
 }

@@ -15,49 +15,43 @@ extern "C" {
     #[no_mangle]
     static mut __stderrp: *mut FILE;
     #[no_mangle]
-    fn fprintf(_: *mut FILE, _: *const libc::c_char, _: ...) -> libc::c_int;
+    fn fprintf(_: *mut FILE, _: *const libc::c_char, _: ...) -> i32;
     #[no_mangle]
     fn perror(_: *const libc::c_char);
     #[no_mangle]
-    fn printf(_: *const libc::c_char, _: ...) -> libc::c_int;
+    fn printf(_: *const libc::c_char, _: ...) -> i32;
     #[no_mangle]
-    fn puts(_: *const libc::c_char) -> libc::c_int;
+    fn puts(_: *const libc::c_char) -> i32;
     #[no_mangle]
-    fn snprintf(
-        _: *mut libc::c_char,
-        _: libc::c_ulong,
-        _: *const libc::c_char,
-        _: ...
-    ) -> libc::c_int;
+    fn snprintf(_: *mut libc::c_char, _: libc::c_ulong, _: *const libc::c_char, _: ...) -> i32;
     #[no_mangle]
-    fn __error() -> *mut libc::c_int;
+    fn __error() -> *mut i32;
     #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: libc::c_int, _: libc::c_ulong) -> *mut libc::c_void;
+    fn memset(_: *mut libc::c_void, _: i32, _: libc::c_ulong) -> *mut libc::c_void;
     #[no_mangle]
-    fn strerror(_: libc::c_int) -> *mut libc::c_char;
+    fn strerror(_: i32) -> *mut libc::c_char;
     #[no_mangle]
     fn strlen(_: *const libc::c_char) -> libc::c_ulong;
     #[no_mangle]
-    fn strcasecmp(_: *const libc::c_char, _: *const libc::c_char) -> libc::c_int;
+    fn strcasecmp(_: *const libc::c_char, _: *const libc::c_char) -> i32;
     #[no_mangle]
-    fn getopt(_: libc::c_int, _: *const *mut libc::c_char, _: *const libc::c_char) -> libc::c_int;
+    fn getopt(_: i32, _: *const *mut libc::c_char, _: *const libc::c_char) -> i32;
     #[no_mangle]
-    static mut optind: libc::c_int;
+    static mut optind: i32;
     #[no_mangle]
-    fn lstat(_: *const libc::c_char, _: *mut stat) -> libc::c_int;
+    fn lstat(_: *const libc::c_char, _: *mut stat) -> i32;
     #[no_mangle]
-    fn closedir(_: *mut DIR) -> libc::c_int;
+    fn closedir(_: *mut DIR) -> i32;
     #[no_mangle]
     fn opendir(_: *const libc::c_char) -> *mut DIR;
     #[no_mangle]
     fn readdir(_: *mut DIR) -> *mut dirent;
     #[no_mangle]
-    fn clock_gettime(__clock_id: clockid_t, __tp: *mut timespec) -> libc::c_int;
+    fn clock_gettime(__clock_id: clockid_t, __tp: *mut timespec) -> i32;
 }
 
-pub type __uint8_t = libc::c_uchar;
 pub type __uint16_t = libc::c_ushort;
-pub type __int32_t = libc::c_int;
+pub type __int32_t = i32;
 pub type __uint32_t = libc::c_uint;
 pub type __int64_t = libc::c_longlong;
 pub type __uint64_t = libc::c_ulonglong;
@@ -82,43 +76,32 @@ pub type fpos_t = __darwin_off_t;
 #[repr(C)]
 pub struct __sbuf {
     pub _base: *mut libc::c_uchar,
-    pub _size: libc::c_int,
+    pub _size: i32,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct __sFILE {
     pub _p: *mut libc::c_uchar,
-    pub _r: libc::c_int,
-    pub _w: libc::c_int,
+    pub _r: i32,
+    pub _w: i32,
     pub _flags: libc::c_short,
     pub _file: libc::c_short,
     pub _bf: __sbuf,
-    pub _lbfsize: libc::c_int,
+    pub _lbfsize: i32,
     pub _cookie: *mut libc::c_void,
-    pub _close: Option<unsafe extern "C" fn(_: *mut libc::c_void) -> libc::c_int>,
-    pub _read: Option<
-        unsafe extern "C" fn(
-            _: *mut libc::c_void,
-            _: *mut libc::c_char,
-            _: libc::c_int,
-        ) -> libc::c_int,
-    >,
-    pub _seek:
-        Option<unsafe extern "C" fn(_: *mut libc::c_void, _: fpos_t, _: libc::c_int) -> fpos_t>,
-    pub _write: Option<
-        unsafe extern "C" fn(
-            _: *mut libc::c_void,
-            _: *const libc::c_char,
-            _: libc::c_int,
-        ) -> libc::c_int,
-    >,
+    pub _close: Option<unsafe extern "C" fn(_: *mut libc::c_void) -> i32>,
+    pub _read:
+        Option<unsafe extern "C" fn(_: *mut libc::c_void, _: *mut libc::c_char, _: i32) -> i32>,
+    pub _seek: Option<unsafe extern "C" fn(_: *mut libc::c_void, _: fpos_t, _: i32) -> fpos_t>,
+    pub _write:
+        Option<unsafe extern "C" fn(_: *mut libc::c_void, _: *const libc::c_char, _: i32) -> i32>,
     pub _ub: __sbuf,
     pub _extra: *mut __sFILEX,
-    pub _ur: libc::c_int,
+    pub _ur: i32,
     pub _ubuf: [libc::c_uchar; 3],
     pub _nbuf: [libc::c_uchar; 1],
     pub _lb: __sbuf,
-    pub _blksize: libc::c_int,
+    pub _blksize: i32,
     pub _offset: fpos_t,
 }
 pub type FILE = __sFILE;
@@ -166,20 +149,20 @@ pub struct dirent {
     pub d_seekoff: __uint64_t,
     pub d_reclen: __uint16_t,
     pub d_namlen: __uint16_t,
-    pub d_type: __uint8_t,
+    pub d_type: u8,
     pub d_name: [libc::c_char; 1024],
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DIR {
-    pub __dd_fd: libc::c_int,
+    pub __dd_fd: i32,
     pub __dd_loc: libc::c_long,
     pub __dd_size: libc::c_long,
     pub __dd_buf: *mut libc::c_char,
-    pub __dd_len: libc::c_int,
+    pub __dd_len: i32,
     pub __dd_seek: libc::c_long,
     pub __padding: libc::c_long,
-    pub __dd_flags: libc::c_int,
+    pub __dd_flags: i32,
     pub __dd_lock: __darwin_pthread_mutex_t,
     pub __dd_td: *mut _telldir,
 }
@@ -196,16 +179,16 @@ pub const _CLOCK_REALTIME: clockid_t = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct result_info {
-    pub file_count: libc::c_int,
-    pub id_count: libc::c_int,
-    pub decode_count: libc::c_int,
+    pub file_count: i32,
+    pub id_count: i32,
+    pub decode_count: i32,
     pub load_time: libc::c_uint,
     pub identify_time: libc::c_uint,
     pub total_time: libc::c_uint,
 }
 
-static mut want_verbose: libc::c_int = 1;
-static mut want_cell_dump: libc::c_int = 0;
+static mut want_verbose: i32 = 1;
+static mut want_cell_dump: i32 = 0;
 static mut decoder: *mut Quirc = 0 as *const Quirc as *mut Quirc;
 
 unsafe fn print_result(name: *const libc::c_char, info: *mut result_info) {
@@ -259,11 +242,11 @@ unsafe fn add_result(mut sum: *mut result_info, inf: *mut result_info) {
     (*sum).total_time = (*sum).total_time.wrapping_add((*inf).total_time);
 }
 
-unsafe fn load_jpeg(dec: *mut Quirc, path: &PathBuf) -> libc::c_int {
+unsafe fn load_jpeg(dec: *mut Quirc, path: &PathBuf) -> i32 {
     todo!()
 }
 
-unsafe fn load_png(dec: *mut Quirc, path: &PathBuf) -> libc::c_int {
+unsafe fn load_png(dec: *mut Quirc, path: &PathBuf) -> i32 {
     println!("opening {}", path.display());
     let img = image::open(&path)
         .expect("failed to open image")
@@ -282,7 +265,7 @@ unsafe fn load_png(dec: *mut Quirc, path: &PathBuf) -> libc::c_int {
     0
 }
 
-unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
+unsafe fn scan_file(path: &str, mut info: *mut result_info) -> i32 {
     let path = std::path::PathBuf::from(path);
     let mut tp: timespec = timespec {
         tv_sec: 0,
@@ -317,15 +300,15 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
     (*info).identify_time = ((tp.tv_sec * 1000 as libc::c_long
         + tp.tv_nsec / 1000000 as libc::c_long) as libc::c_uint)
         .wrapping_sub(start);
-    (*info).id_count = quirc_count(decoder);
+    (*info).id_count = (*decoder).count() as i32;
     let mut i = 0;
     while i < (*info).id_count {
-        let mut code: quirc_code = quirc_code {
-            corners: [quirc_point { x: 0, y: 0 }; 4],
+        let mut code: Code = Code {
+            corners: [Point { x: 0, y: 0 }; 4],
             size: 0,
             cell_bitmap: [0; 3917],
         };
-        let mut data = quirc_data::default();
+        let mut data = Data::default();
         quirc_extract(decoder, i, &mut code);
         if quirc_decode(&mut code, &mut data) as u64 == 0 {
             (*info).decode_count += 1
@@ -349,8 +332,8 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
     if want_cell_dump != 0 || want_verbose != 0 {
         i = 0;
         while i < (*info).id_count {
-            let mut code_0: quirc_code = quirc_code {
-                corners: [quirc_point { x: 0, y: 0 }; 4],
+            let mut code_0: Code = Code {
+                corners: [Point { x: 0, y: 0 }; 4],
                 size: 0,
                 cell_bitmap: [0; 3917],
             };
@@ -360,13 +343,10 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
                 printf(b"\n\x00" as *const u8 as *const libc::c_char);
             }
             if want_verbose != 0 {
-                let mut data_0 = quirc_data::default();
+                let mut data_0 = Data::default();
                 let err = quirc_decode(&mut code_0, &mut data_0);
                 if err as u64 != 0 {
-                    printf(
-                        b"  ERROR: %s\n\n\x00" as *const u8 as *const libc::c_char,
-                        quirc_strerror(err),
-                    );
+                    print!("  ERROR: {}\n\n", quirc_strerror(err),);
                 } else {
                     printf(b"  Decode successful:\n\x00" as *const u8 as *const libc::c_char);
                     dump_data(&mut data_0);
@@ -380,11 +360,11 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
     return 1;
 }
 
-unsafe fn test_scan(path: &str, info: *mut result_info) -> libc::c_int {
+unsafe fn test_scan(path: &str, info: *mut result_info) -> i32 {
     scan_file(path, info)
 }
 
-unsafe fn run_tests(paths: &[String]) -> libc::c_int {
+unsafe fn run_tests(paths: &[String]) -> i32 {
     let mut sum: result_info = result_info {
         file_count: 0,
         id_count: 0,
@@ -393,7 +373,7 @@ unsafe fn run_tests(paths: &[String]) -> libc::c_int {
         identify_time: 0,
         total_time: 0,
     };
-    let mut count: libc::c_int = 0;
+    let mut count: i32 = 0;
     decoder = quirc_new();
     assert!(!decoder.is_null(), "quirc_new");
 
@@ -437,14 +417,14 @@ unsafe fn run_tests(paths: &[String]) -> libc::c_int {
     quirc_destroy(decoder);
     return 0;
 }
-unsafe fn main_0(args: Vec<String>) -> libc::c_int {
+unsafe fn main_0(args: Vec<String>) -> i32 {
     println!("quirc test program");
     println!("Library version: {}\n", quirc_version());
 
     run_tests(&args)
 }
 
-unsafe fn dump_data(data: *const quirc_data) {
+unsafe fn dump_data(data: *const Data) {
     let data = *data;
 
     println!("    Version: {}", data.version);
@@ -459,7 +439,7 @@ unsafe fn dump_data(data: *const quirc_data) {
     println!("    ECI: {:?}", data.eci);
 }
 
-unsafe fn dump_cells(code: *const quirc_code) {
+unsafe fn dump_cells(code: *const Code) {
     let code = *code;
 
     print!("    {} cells, corners:", code.size);

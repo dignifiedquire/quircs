@@ -1,5 +1,3 @@
-use libc;
-
 pub const VERSION_MIN: usize = 1;
 pub const VERSION_MAX: usize = 40;
 
@@ -7,16 +5,16 @@ pub const VERSION_MAX: usize = 40;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct quirc_rs_params {
-    pub bs: libc::c_int,
-    pub dw: libc::c_int,
-    pub ns: libc::c_int,
+    pub bs: i32,
+    pub dw: i32,
+    pub ns: i32,
     /* Number of small blocks */
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct quirc_version_info {
-    pub data_bytes: libc::c_int,
-    pub apat: [libc::c_int; 7],
+    pub data_bytes: i32,
+    pub apat: [i32; 7],
     pub ecc: [quirc_rs_params; 4],
 }
 
