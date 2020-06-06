@@ -288,8 +288,9 @@ unsafe fn region_code(q: *mut Quirc, x: i32, y: i32) -> i32 {
 
 unsafe fn find_one_corner(user_data: *mut libc::c_void, y: i32, left: i32, right: i32) {
     let xs: [i32; 2] = [left, right];
-    let dy: i32 = y - (*psd).ref_0.y;
     let mut psd = user_data as *mut PolygonScoreData;
+    let dy: i32 = y - (*psd).ref_0.y;
+
     let mut i = 0;
     while i < 2 {
         let dx: i32 = xs[i as usize] - (*psd).ref_0.x;
@@ -350,7 +351,7 @@ unsafe fn find_region_corners(q: *mut Quirc, rcode: i32, ref_0: *const Point, co
         rcode,
         1,
         Some(find_one_corner as unsafe fn(_: *mut libc::c_void, _: i32, _: i32, _: i32) -> ()),
-        &mut psd as *mut polygon_score_data as *mut libc::c_void,
+        &mut psd as *mut _ as *mut libc::c_void,
         0,
     );
     psd.ref_0.x = (*psd.corners.offset(0)).x - psd.ref_0.x;
@@ -377,12 +378,12 @@ unsafe fn find_region_corners(q: *mut Quirc, rcode: i32, ref_0: *const Point, co
         1,
         rcode,
         Some(find_other_corners as unsafe fn(_: *mut libc::c_void, _: i32, _: i32, _: i32) -> ()),
-        &mut psd as *mut polygon_score_data as *mut libc::c_void,
+        &mut psd as *mut _ as *mut libc::c_void,
         0,
     );
 }
 
-unsafe fn record_capstone(q: &mut Quirc, ring: i32, stone: i32) {
+unsafe fn record_capstone(q: *mut Quirc, ring: i32, stone: i32) {
     let mut stone_reg = &mut *(*q).regions.as_mut_ptr().offset(stone as isize) as *mut Region;
     let mut ring_reg = &mut *(*q).regions.as_mut_ptr().offset(ring as isize) as *mut Region;
     if (*q).num_capstones() >= 32 {
@@ -1178,8 +1179,7 @@ unsafe fn test_grouping(q: *mut Quirc, i: i32) {
             if u < 0.2f64 * v {
                 let fresh5 = hlist.count;
                 hlist.count = hlist.count + 1;
-                let mut n: *mut neighbour =
-                    &mut *hlist.n.as_mut_ptr().offset(fresh5 as isize) as *mut neighbour;
+                let mut n = &mut *hlist.n.as_mut_ptr().offset(fresh5 as isize) as *mut Neighbour;
                 (*n).index = j;
                 (*n).distance = v
             }
