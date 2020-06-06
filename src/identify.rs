@@ -155,7 +155,10 @@ unsafe fn flood_fill_seed(
 ) {
     let mut left: libc::c_int = x;
     let mut right: libc::c_int = x;
-    let mut row: *mut quirc_pixel_t = (*q).pixels.offset((y * (*q).w as libc::c_int) as isize);
+    let mut row: *mut quirc_pixel_t = (*q)
+        .pixels
+        .as_mut_ptr()
+        .offset((y * (*q).w as libc::c_int) as isize);
     if depth >= FLOOD_FILL_MAX_DEPTH {
         return;
     }
@@ -180,6 +183,7 @@ unsafe fn flood_fill_seed(
     if y > 0 {
         row = (*q)
             .pixels
+            .as_mut_ptr()
             .offset(((y - 1) * (*q).w as libc::c_int) as isize);
         i = left;
         while i <= right {
@@ -192,6 +196,7 @@ unsafe fn flood_fill_seed(
     if y < (*q).h as libc::c_int - 1 {
         row = (*q)
             .pixels
+            .as_mut_ptr()
             .offset(((y + 1) * (*q).w as libc::c_int) as isize);
         i = left;
         while i <= right {
@@ -214,7 +219,7 @@ unsafe fn otsu(q: *const Quirc) -> uint8_t {
         0,
         std::mem::size_of::<[libc::c_uint; 256]>(),
     );
-    let mut ptr: *mut uint8_t = (*q).image;
+    let mut ptr = (*q).image.as_ptr();
     let mut length = numPixels;
     loop {
         let fresh0 = length;
@@ -280,7 +285,10 @@ unsafe fn region_code(mut q: *mut Quirc, x: libc::c_int, y: libc::c_int) -> libc
     if x < 0 || y < 0 || x >= (*q).w as libc::c_int || y >= (*q).h as libc::c_int {
         return -1;
     }
-    let pixel = *(*q).pixels.offset((y * (*q).w as libc::c_int + x) as isize) as libc::c_int;
+    let pixel = *(*q)
+        .pixels
+        .as_mut_ptr()
+        .offset((y * (*q).w as libc::c_int + x) as isize) as libc::c_int;
     if pixel >= 2 {
         return pixel;
     }
@@ -529,7 +537,10 @@ unsafe fn test_capstone(q: *mut Quirc, x: libc::c_int, y: libc::c_int, pb: *mut 
 }
 
 unsafe fn finder_scan(q: *mut Quirc, y: libc::c_int) {
-    let row: *mut quirc_pixel_t = (*q).pixels.offset((y * (*q).w as libc::c_int) as isize);
+    let row = (*q)
+        .pixels
+        .as_ptr()
+        .offset((y * (*q).w as libc::c_int) as isize);
     let mut last_color: libc::c_int = 0;
     let mut run_length: libc::c_int = 0;
     let mut run_count: libc::c_int = 0;
@@ -724,7 +735,10 @@ unsafe fn timing_scan(
         if y < 0 || y >= (*q).h as libc::c_int || x < 0 || x >= (*q).w as libc::c_int {
             break;
         }
-        let pixel = *(*q).pixels.offset((y * (*q).w as libc::c_int + x) as isize) as libc::c_int;
+        let pixel = *(*q)
+            .pixels
+            .as_ptr()
+            .offset((y * (*q).w as libc::c_int + x) as isize) as libc::c_int;
         if pixel != 0 {
             if run_length >= 2 {
                 count += 1
@@ -819,6 +833,7 @@ unsafe fn read_cell(
     }
     return if *(*q)
         .pixels
+        .as_ptr()
         .offset((p.y * (*q).w as libc::c_int + p.x) as isize) as libc::c_int
         != 0
     {
@@ -852,6 +867,7 @@ unsafe fn fitness_cell(
             {
                 if *(*q)
                     .pixels
+                    .as_ptr()
                     .offset((p.y * (*q).w as libc::c_int + p.x) as isize)
                     != 0
                 {
@@ -1357,8 +1373,8 @@ unsafe fn test_grouping(q: *mut Quirc, i: libc::c_int) {
 }
 
 unsafe fn pixels_setup(q: *mut Quirc, threshold: uint8_t) {
-    let mut source: *mut uint8_t = (*q).image;
-    let mut dest: *mut quirc_pixel_t = (*q).pixels;
+    let mut source: *mut uint8_t = (*q).image.as_mut_ptr();
+    let mut dest: *mut quirc_pixel_t = (*q).pixels.as_mut_ptr();
     let mut length = (*q).w * (*q).h;
     loop {
         let fresh7 = length;
@@ -1382,40 +1398,38 @@ unsafe fn pixels_setup(q: *mut Quirc, threshold: uint8_t) {
 /// quirc_begin() must first be called to obtain access to a buffer into
 /// which the input image should be placed. Optionally, the current
 /// width and height may be returned.
-pub unsafe fn quirc_begin(
-    mut q: *mut Quirc,
-    w: *mut libc::c_int,
-    h: *mut libc::c_int,
-) -> *mut uint8_t {
-    (*q).num_regions = 2;
-    (*q).num_capstones = 0;
-    (*q).num_grids = 0;
+pub unsafe fn quirc_begin(q: *mut Quirc, w: *mut usize, h: *mut usize) -> *mut uint8_t {
+    let q = &mut *q;
+    q.num_regions = 2;
+    q.num_capstones = 0;
+    q.num_grids = 0;
+
     if !w.is_null() {
-        *w = (*q).w as libc::c_int;
+        *w = q.w;
     }
     if !h.is_null() {
-        *h = (*q).h as libc::c_int;
+        *h = q.h;
     }
-    return (*q).image;
+
+    q.image.as_mut_ptr()
 }
 
 /// After filling the buffer, quirc_end() should be called to process
 /// the image for QR-code recognition. The locations and content of each
 /// code may be obtained using accessor functions described below.
 pub unsafe fn quirc_end(q: *mut Quirc) {
-    let threshold: uint8_t = otsu(q);
+    let threshold = otsu(q);
     pixels_setup(q, threshold);
-    let mut i = 0;
-    while i < (*q).h {
+
+    for i in 0..(*q).h {
         finder_scan(q, i as libc::c_int);
-        i += 1;
     }
-    i = 0;
-    while i < (*q).num_capstones as usize {
+
+    for i in 0..(*q).num_capstones as usize {
         test_grouping(q, i as libc::c_int);
-        i += 1;
     }
 }
+
 /// Extract the QR-code specified by the given index.
 pub unsafe fn quirc_extract(q: *const Quirc, index: libc::c_int, mut code: *mut quirc_code) {
     let qr: *const quirc_grid = &*(*q).grids.as_ptr().offset(index as isize) as *const quirc_grid;

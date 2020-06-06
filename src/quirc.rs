@@ -1,14 +1,14 @@
-use libc::{self, calloc, free, malloc, memcpy, memset};
+use libc;
+use num_derive::{FromPrimitive, ToPrimitive};
 
 pub type uint8_t = libc::c_uchar;
 pub type uint16_t = libc::c_ushort;
-pub type uint32_t = libc::c_uint;
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 #[repr(C)]
 pub struct Quirc {
-    pub image: *mut uint8_t,
-    pub pixels: *mut quirc_pixel_t,
+    pub image: Vec<uint8_t>,
+    pub pixels: Vec<quirc_pixel_t>,
     pub w: usize,
     pub h: usize,
     pub num_regions: libc::c_int,
@@ -19,7 +19,24 @@ pub struct Quirc {
     pub grids: [quirc_grid; 8],
 }
 
-#[derive(Copy, Clone)]
+impl Default for Quirc {
+    fn default() -> Self {
+        Quirc {
+            image: Default::default(),
+            pixels: Default::default(),
+            w: 0,
+            h: 0,
+            num_regions: 0,
+            regions: [Default::default(); 65534],
+            num_capstones: 0,
+            capstones: [Default::default(); 32],
+            num_grids: 0,
+            grids: [Default::default(); 8],
+        }
+    }
+}
+
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct quirc_grid {
     pub caps: [libc::c_int; 3],
@@ -31,13 +48,15 @@ pub struct quirc_grid {
     pub grid_size: libc::c_int,
     pub c: [libc::c_double; 8],
 }
-#[derive(Copy, Clone)]
+
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct quirc_point {
     pub x: libc::c_int,
     pub y: libc::c_int,
 }
-#[derive(Copy, Clone)]
+
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct quirc_capstone {
     pub ring: libc::c_int,
@@ -47,7 +66,8 @@ pub struct quirc_capstone {
     pub c: [libc::c_double; 8],
     pub qr_grid: libc::c_int,
 }
-#[derive(Copy, Clone)]
+
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct quirc_region {
     pub seed: quirc_point,
@@ -91,7 +111,7 @@ pub struct quirc_data {
     ///  Various parameters of the QR-code. These can mostly be  ignored
     /// if you only care about the data.
     pub version: libc::c_int,
-    pub ecc_level: libc::c_int,
+    pub ecc_level: EccLevel,
     pub mask: libc::c_int,
     /// This field is the highest-valued data type found in the QR code.
     pub data_type: libc::c_int,
@@ -100,7 +120,21 @@ pub struct quirc_data {
     pub payload: [uint8_t; 8896],
     pub payload_len: libc::c_int,
     /// ECI assignment number
-    pub eci: uint32_t,
+    pub eci: Option<Eci>,
+}
+
+impl Default for quirc_data {
+    fn default() -> Self {
+        Self {
+            version: 0,
+            ecc_level: Default::default(),
+            mask: 0,
+            data_type: 0,
+            payload: [0; 8896],
+            payload_len: 0,
+            eci: Default::default(),
+        }
+    }
 }
 
 /// Obtain the library version string.
@@ -111,96 +145,28 @@ pub fn quirc_version() -> &'static str {
 /// Construct a new QR-code recognizer. This function will return NULL
 /// if sufficient memory could not be allocated.
 pub unsafe fn quirc_new() -> *mut Quirc {
-    let q: *mut Quirc = malloc(std::mem::size_of::<Quirc>()) as *mut Quirc;
-    if q.is_null() {
-        return 0 as *mut Quirc;
-    }
-    memset(q as *mut libc::c_void, 0, ::std::mem::size_of::<Quirc>());
-    q
+    let quirc = Quirc::default();
+    Box::into_raw(Box::new(quirc))
 }
 
 /// Destroy a QR-code recognizer.
 pub unsafe fn quirc_destroy(q: *mut Quirc) {
-    free((*q).image as *mut libc::c_void);
-    /* q->pixels may alias q->image when their type representation is of the
-    same size, so we need to be careful here to avoid a double free */
-    if 0 == 0 {
-        free((*q).pixels as *mut libc::c_void);
-    }
-    free(q as *mut libc::c_void);
+    let _q = Box::from_raw(q);
 }
 
 /// Resize the QR-code recognizer. The size of an image must be
 /// specified before codes can be analyzed.
 ///
 /// This function returns 0 on success, or -1 if sufficient memory could  not be allocated.
-pub unsafe fn quirc_resize(mut q: *mut Quirc, w: usize, h: usize) -> libc::c_int {
-    let olddim: usize;
-    let newdim: usize;
-    let min: usize;
-    let current_block: u64;
-    let image: *mut uint8_t;
-    let mut pixels: *mut quirc_pixel_t = 0 as *mut quirc_pixel_t;
-    /*
-     * XXX: w and h should be usize (or at least unsigned) as negatives
-     * values would not make much sense. The downside is that it would break
-     * both the API and ABI. Thus, at the moment, let's just do a sanity
-     * check.
-     */
+pub unsafe fn quirc_resize(q: *mut Quirc, w: usize, h: usize) -> libc::c_int {
+    let q = &mut *q;
+    let newdim = w * h;
+    q.image.resize(newdim, 0);
+    q.pixels.resize(newdim, 0);
+    q.w = w;
+    q.h = h;
 
-    /*
-     * alloc a new buffer for q->image. We avoid realloc(3) because we want
-     * on failure to be leave `q` in a consistant, unmodified state.
-     */
-    image = calloc(w, h) as *mut uint8_t;
-    if !image.is_null() {
-        /* compute the "old" (i.e. currently allocated) and the "new"
-        (i.e. requested) image dimensions */
-        olddim = ((*q).w * (*q).h) as usize;
-        newdim = (w * h) as usize;
-        min = if olddim < newdim { olddim } else { newdim };
-        /*
-         * copy the data into the new buffer, avoiding (a) to read beyond the
-         * old buffer when the new size is greater and (b) to write beyond the
-         * new buffer when the new size is smaller, hence the min computation.
-         */
-        memcpy(
-            image as *mut libc::c_void,
-            (*q).image as *const libc::c_void,
-            min,
-        );
-        /* alloc a new buffer for q->pixels if needed */
-        if 0 == 0 {
-            pixels = calloc(newdim, std::mem::size_of::<quirc_pixel_t>()) as *mut quirc_pixel_t;
-            if pixels.is_null() {
-                current_block = 11234461503687749102;
-            } else {
-                current_block = 13109137661213826276;
-            }
-        } else {
-            current_block = 13109137661213826276;
-        }
-        match current_block {
-            11234461503687749102 => {}
-            _ => {
-                /* alloc succeeded, update `q` with the new size and buffers */
-                (*q).w = w;
-                (*q).h = h;
-                free((*q).image as *mut libc::c_void);
-                (*q).image = image;
-                if 0 == 0 {
-                    free((*q).pixels as *mut libc::c_void);
-                    (*q).pixels = pixels
-                }
-                return 0;
-            }
-        }
-    }
-
-    /* NOTREACHED */
-    free(image as *mut libc::c_void);
-    free(pixels as *mut libc::c_void);
-    -1
+    0
 }
 
 // Limits on the maximum size of QR-codes and their content.
@@ -208,7 +174,7 @@ const QUIRC_MAX_BITMAP: usize = 3917;
 const QUIRC_MAX_PAYLOAD: usize = 8896;
 
 /// QR-code ECC types.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive)]
 pub enum EccLevel {
     M = 0,
     L = 1,
@@ -216,8 +182,14 @@ pub enum EccLevel {
     Q = 3,
 }
 
+impl Default for EccLevel {
+    fn default() -> Self {
+        EccLevel::M
+    }
+}
+
 /// QR-code data types.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive)]
 pub enum DataType {
     Numeric = 1,
     Alpha = 2,
@@ -226,7 +198,7 @@ pub enum DataType {
 }
 
 /// Common character encodings
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive)]
 pub enum Eci {
     ISO_8859_1 = 1,
     IBM437 = 2,

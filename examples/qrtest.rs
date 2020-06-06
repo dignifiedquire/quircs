@@ -325,15 +325,7 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
             size: 0,
             cell_bitmap: [0; 3917],
         };
-        let mut data: quirc_data = quirc_data {
-            version: 0,
-            ecc_level: 0,
-            mask: 0,
-            data_type: 0,
-            payload: [0; 8896],
-            payload_len: 0,
-            eci: 0,
-        };
+        let mut data = quirc_data::default();
         quirc_extract(decoder, i, &mut code);
         if quirc_decode(&mut code, &mut data) as u64 == 0 {
             (*info).decode_count += 1
@@ -368,15 +360,7 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
                 printf(b"\n\x00" as *const u8 as *const libc::c_char);
             }
             if want_verbose != 0 {
-                let mut data_0: quirc_data = quirc_data {
-                    version: 0,
-                    ecc_level: 0,
-                    mask: 0,
-                    data_type: 0,
-                    payload: [0; 8896],
-                    payload_len: 0,
-                    eci: 0,
-                };
+                let mut data_0 = quirc_data::default();
                 let err = quirc_decode(&mut code_0, &mut data_0);
                 if err as u64 != 0 {
                     printf(
@@ -462,38 +446,17 @@ unsafe fn main_0(args: Vec<String>) -> libc::c_int {
 
 unsafe fn dump_data(data: *const quirc_data) {
     let data = *data;
-    let levels = "MLHQ";
 
     println!("    Version: {}", data.version);
-    println!(
-        "    ECC level: {}",
-        levels.as_bytes()[data.ecc_level as usize] as char
-    );
+    println!("    ECC level: {:?}", data.ecc_level);
     println!("    Mask: {}", data.mask);
-    println!(
-        "    Data type: {} ({})",
-        data.data_type,
-        data_type_str(data.data_type)
-    );
+    println!("    Data type: {:?}", data.data_type,);
     println!("    Length: {}", data.payload_len);
     println!(
         "    Payload: {:?}",
         std::str::from_utf8(&data.payload[..data.payload_len as usize])
     );
-
-    if data.eci != 0 {
-        println!("    ECI: {}", data.eci);
-    }
-}
-
-fn data_type_str(dt: i32) -> &'static str {
-    match dt {
-        QUIRC_DATA_TYPE_NUMERIC => "NUMERIC",
-        QUIRC_DATA_TYPE_ALPHA => "ALPHA",
-        QUIRC_DATA_TYPE_BYTE => "BYTE",
-        QUIRC_DATA_TYPE_KANJI => "KANJI",
-        _ => "unknown",
-    }
+    println!("    ECI: {:?}", data.eci);
 }
 
 unsafe fn dump_cells(code: *const quirc_code) {

@@ -1,4 +1,5 @@
 use libc::{self, abs, memcpy, memset};
+use num_traits::{FromPrimitive, ToPrimitive};
 
 use crate::quirc::*;
 use crate::version_db::*;
@@ -925,7 +926,7 @@ unsafe fn read_format(
         return err;
     }
     let fdata = (format as libc::c_int >> 10) as uint16_t;
-    (*data).ecc_level = fdata as libc::c_int >> 3;
+    (*data).ecc_level = EccLevel::from_i32(fdata as libc::c_int >> 3).unwrap();
     (*data).mask = fdata as libc::c_int & 7;
     return QUIRC_SUCCESS;
 }
@@ -1274,17 +1275,27 @@ unsafe fn decode_eci(mut data: *mut quirc_data, ds: *mut datastream) -> quirc_de
     if bits_remaining(ds) < 8 {
         return QUIRC_ERROR_DATA_UNDERFLOW;
     }
-    (*data).eci = take_bits(ds, 8) as uint32_t;
-    if (*data).eci & 0xc0 as libc::c_uint == 0x80 as libc::c_uint {
+    (*data).eci = Eci::from_u32(take_bits(ds, 8) as uint32_t);
+    if (*data).eci.and_then(|e| e.to_u32()).unwrap_or_default() & 0xc0 as libc::c_uint
+        == 0x80 as libc::c_uint
+    {
         if bits_remaining(ds) < 8 {
             return QUIRC_ERROR_DATA_UNDERFLOW;
         }
-        (*data).eci = (*data).eci << 8 | take_bits(ds, 8) as libc::c_uint
-    } else if (*data).eci & 0xe0 as libc::c_uint == 0xc0 as libc::c_uint {
+        (*data).eci = Eci::from_u32(
+            (*data).eci.and_then(|e| e.to_u32()).unwrap_or_default() << 8
+                | take_bits(ds, 8) as libc::c_uint,
+        );
+    } else if (*data).eci.and_then(|e| e.to_u32()).unwrap_or_default() & 0xe0 as libc::c_uint
+        == 0xc0 as libc::c_uint
+    {
         if bits_remaining(ds) < 16 {
             return QUIRC_ERROR_DATA_UNDERFLOW;
         }
-        (*data).eci = (*data).eci << 16 | take_bits(ds, 16) as libc::c_uint
+        (*data).eci = Eci::from_u32(
+            (*data).eci.and_then(|e| e.to_u32()).unwrap_or_default() << 16
+                | take_bits(ds, 16) as libc::c_uint,
+        );
     }
     return QUIRC_SUCCESS;
 }
@@ -1332,11 +1343,6 @@ pub unsafe fn quirc_decode(
     if ((*code).size - 17) % 4 != 0 {
         return QUIRC_ERROR_INVALID_GRID_SIZE;
     }
-    memset(
-        data as *mut libc::c_void,
-        0,
-        std::mem::size_of::<quirc_data>(),
-    );
     memset(
         &mut ds as *mut datastream as *mut libc::c_void,
         0,
