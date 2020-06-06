@@ -4,43 +4,38 @@ use num_traits::{FromPrimitive, ToPrimitive};
 use crate::quirc::*;
 use crate::version_db::*;
 
-/* ***********************************************************************
- * Decoder algorithm
- */
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct datastream {
+struct Datastream {
     pub raw: [u8; 8896],
     pub data_bits: i32,
     pub ptr: i32,
     pub data: [u8; 8896],
 }
 
-/* ***********************************************************************
- * Galois fields
- */
+/// Galois Field.
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct galois_field {
+struct GaloisField {
     pub p: i32,
     pub log: *const u8,
     pub exp: *const u8,
 }
-static mut gf16_exp: [u8; 16] = [
+
+static mut GF16_EXP: [u8; 16] = [
     0x1, 0x2, 0x4, 0x8, 0x3, 0x6, 0xc, 0xb, 0x5, 0xa, 0x7, 0xe, 0xf, 0xd, 0x9, 0x1,
 ];
-static mut gf16_log: [u8; 16] = [
+static mut GF16_LOG: [u8; 16] = [
     0, 0xf, 0x1, 0x4, 0x2, 0x8, 0x5, 0xa, 0x3, 0xe, 0x9, 0x7, 0x6, 0xd, 0xb, 0xc,
 ];
-static mut gf16: galois_field = unsafe {
-    galois_field {
-        p: 15,
-        log: gf16_log.as_ptr(),
-        exp: gf16_exp.as_ptr(),
-    }
+
+static mut GF16: GaloisField = GaloisField {
+    p: 15,
+    log: unsafe { GF16_LOG.as_ptr() },
+    exp: unsafe { GF16_EXP.as_ptr() },
 };
 
-static mut gf256_exp: [u8; 256] = [
+static mut GF256_EXP: [u8; 256] = [
     0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x1d, 0x3a, 0x74, 0xe8, 0xcd, 0x87, 0x13, 0x26,
     0x4c, 0x98, 0x2d, 0x5a, 0xb4, 0x75, 0xea, 0xc9, 0x8f, 0x3, 0x6, 0xc, 0x18, 0x30, 0x60, 0xc0,
     0x9d, 0x27, 0x4e, 0x9c, 0x25, 0x4a, 0x94, 0x35, 0x6a, 0xd4, 0xb5, 0x77, 0xee, 0xc1, 0x9f, 0x23,
@@ -58,7 +53,7 @@ static mut gf256_exp: [u8; 256] = [
     0x12, 0x24, 0x48, 0x90, 0x3d, 0x7a, 0xf4, 0xf5, 0xf7, 0xf3, 0xfb, 0xeb, 0xcb, 0x8b, 0xb, 0x16,
     0x2c, 0x58, 0xb0, 0x7d, 0xfa, 0xe9, 0xcf, 0x83, 0x1b, 0x36, 0x6c, 0xd8, 0xad, 0x47, 0x8e, 0x1,
 ];
-static mut gf256_log: [u8; 256] = [
+static mut GF256_LOG: [u8; 256] = [
     0, 0xff, 0x1, 0x19, 0x2, 0x32, 0x1a, 0xc6, 0x3, 0xdf, 0x33, 0xee, 0x1b, 0x68, 0xc7, 0x4b, 0x4,
     0x64, 0xe0, 0xe, 0x34, 0x8d, 0xef, 0x81, 0x1c, 0xc1, 0x69, 0xf8, 0xc8, 0x8, 0x4c, 0x71, 0x5,
     0x8a, 0x65, 0x2f, 0xe1, 0x24, 0xf, 0x21, 0x35, 0x93, 0x8e, 0xda, 0xf0, 0x12, 0x82, 0x45, 0x1d,
@@ -76,17 +71,16 @@ static mut gf256_log: [u8; 256] = [
     0x59, 0x5f, 0xb0, 0x9c, 0xa9, 0xa0, 0x51, 0xb, 0xf5, 0x16, 0xeb, 0x7a, 0x75, 0x2c, 0xd7, 0x4f,
     0xae, 0xd5, 0xe9, 0xe6, 0xe7, 0xad, 0xe8, 0x74, 0xd6, 0xf4, 0xea, 0xa8, 0x50, 0x58, 0xaf,
 ];
-static mut gf256: galois_field = unsafe {
-    galois_field {
-        p: 255,
-        log: gf256_log.as_ptr(),
-        exp: gf256_exp.as_ptr(),
-    }
+
+static mut GF256: GaloisField = GaloisField {
+    p: 255,
+    log: unsafe { GF256_LOG.as_ptr() },
+    exp: unsafe { GF256_EXP.as_ptr() },
 };
-/* ***********************************************************************
- * Polynomial operations
- */
-unsafe fn poly_add(dst: *mut u8, src: *const u8, c: u8, shift: i32, gf: *const galois_field) {
+
+// -- Polynomial operations
+
+unsafe fn poly_add(dst: *mut u8, src: *const u8, c: u8, shift: i32, gf: *const GaloisField) {
     let log_c: i32 = *(*gf).log.offset(c as isize) as i32;
     if c == 0 {
         return;
@@ -108,7 +102,8 @@ unsafe fn poly_add(dst: *mut u8, src: *const u8, c: u8, shift: i32, gf: *const g
         i += 1
     }
 }
-unsafe fn poly_eval(s: *const u8, x: u8, gf: *const galois_field) -> u8 {
+
+unsafe fn poly_eval(s: *const u8, x: u8, gf: *const GaloisField) -> u8 {
     let mut sum: u8 = 0;
     let log_x: u8 = *(*gf).log.offset(x as isize);
     if x == 0 {
@@ -127,10 +122,9 @@ unsafe fn poly_eval(s: *const u8, x: u8, gf: *const galois_field) -> u8 {
     }
     return sum;
 }
-/* ***********************************************************************
- * Berlekamp-Massey algorithm for finding error locator polynomials.
- */
-unsafe fn berlekamp_massey(s: *const u8, N: i32, gf: *const galois_field, sigma: *mut u8) {
+
+/// Berlekamp-Massey algorithm for finding error locator polynomials.
+unsafe fn berlekamp_massey(s: *const u8, N: i32, gf: *const GaloisField, sigma: *mut u8) {
     let mut C: [u8; 64] = [0; 64];
     let mut B: [u8; 64] = [0; 64];
     let mut L: i32 = 0;
@@ -200,11 +194,10 @@ unsafe fn berlekamp_massey(s: *const u8, N: i32, gf: *const galois_field, sigma:
         64,
     );
 }
-/* ***********************************************************************
- * Code stream error correction
- *
- * Generator polynomial for GF(2^8) is x^8 + x^4 + x^3 + x^2 + 1
- */
+
+/// Code stream error correction
+///
+/// Generator polynomial for GF(2^8) is x^8 + x^4 + x^3 + x^2 + 1
 unsafe fn block_syndromes(data: *const u8, bs: i32, npar: i32, s: *mut u8) -> i32 {
     let mut nonzero: i32 = 0;
     memset(s as *mut libc::c_void, 0, 64);
@@ -216,7 +209,7 @@ unsafe fn block_syndromes(data: *const u8, bs: i32, npar: i32, s: *mut u8) -> i3
             if !(c == 0) {
                 let ref mut fresh1 = *s.offset(i as isize);
                 *fresh1 = (*fresh1 as i32
-                    ^ gf256_exp[((gf256_log[c as usize] as i32 + i * j) % 255) as usize] as i32)
+                    ^ GF256_EXP[((GF256_LOG[c as usize] as i32 + i * j) % 255) as usize] as i32)
                     as u8
             }
             j += 1
@@ -228,12 +221,13 @@ unsafe fn block_syndromes(data: *const u8, bs: i32, npar: i32, s: *mut u8) -> i3
     }
     return nonzero;
 }
+
 unsafe fn eloc_poly(omega: *mut u8, s: *const u8, sigma: *const u8, npar: i32) {
     memset(omega as *mut libc::c_void, 0, 64);
     let mut i = 0;
     while i < npar {
         let a: u8 = *sigma.offset(i as isize);
-        let log_a: u8 = gf256_log[a as usize];
+        let log_a: u8 = GF256_LOG[a as usize];
         if !(a == 0) {
             let mut j = 0;
             while j + 1 < 64 {
@@ -244,7 +238,7 @@ unsafe fn eloc_poly(omega: *mut u8, s: *const u8, sigma: *const u8, npar: i32) {
                 if !(b == 0) {
                     let ref mut fresh2 = *omega.offset((i + j) as isize);
                     *fresh2 = (*fresh2 as i32
-                        ^ gf256_exp[((log_a as i32 + gf256_log[b as usize] as i32) % 255) as usize]
+                        ^ GF256_EXP[((log_a as i32 + GF256_LOG[b as usize] as i32) % 255) as usize]
                             as i32) as u8
                 }
                 j += 1
@@ -263,7 +257,7 @@ unsafe fn correct_block(data: *mut u8, ecc: *const quirc_rs_params) -> quirc_dec
     if block_syndromes(data, (*ecc).bs, npar, s.as_mut_ptr()) == 0 {
         return QUIRC_SUCCESS;
     }
-    berlekamp_massey(s.as_mut_ptr(), npar, &gf256, sigma.as_mut_ptr());
+    berlekamp_massey(s.as_mut_ptr(), npar, &GF256, sigma.as_mut_ptr());
     /* Compute derivative of sigma */
     memset(sigma_deriv.as_mut_ptr() as *mut libc::c_void, 0, 64);
     let mut i = 0;
@@ -281,12 +275,12 @@ unsafe fn correct_block(data: *mut u8, ecc: *const quirc_rs_params) -> quirc_dec
     /* Find error locations and magnitudes */
     i = 0;
     while i < (*ecc).bs {
-        let xinv: u8 = gf256_exp[(255 - i) as usize];
-        if poly_eval(sigma.as_mut_ptr(), xinv, &gf256) == 0 {
-            let sd_x: u8 = poly_eval(sigma_deriv.as_mut_ptr(), xinv, &gf256);
-            let omega_x: u8 = poly_eval(omega.as_mut_ptr(), xinv, &gf256);
-            let error: u8 = gf256_exp[((255 - gf256_log[sd_x as usize] as i32
-                + gf256_log[omega_x as usize] as i32)
+        let xinv: u8 = GF256_EXP[(255 - i) as usize];
+        if poly_eval(sigma.as_mut_ptr(), xinv, &GF256) == 0 {
+            let sd_x: u8 = poly_eval(sigma_deriv.as_mut_ptr(), xinv, &GF256);
+            let omega_x: u8 = poly_eval(omega.as_mut_ptr(), xinv, &GF256);
+            let error: u8 = GF256_EXP[((255 - GF256_LOG[sd_x as usize] as i32
+                + GF256_LOG[omega_x as usize] as i32)
                 % 255) as usize];
             let ref mut fresh3 = *data.offset(((*ecc).bs - i - 1) as isize);
             *fresh3 = (*fresh3 as i32 ^ error as i32) as u8;
@@ -308,7 +302,7 @@ unsafe fn format_syndromes(u: u16, s: *mut u8) -> i32 {
         while j < 15 {
             if u as i32 & 1 << j != 0 {
                 let ref mut fresh4 = *s.offset(i as isize);
-                *fresh4 = (*fresh4 as i32 ^ gf16_exp[((i + 1) * j % 15) as usize] as i32) as u8;
+                *fresh4 = (*fresh4 as i32 ^ GF16_EXP[((i + 1) * j % 15) as usize] as i32) as u8;
             }
             j += 1
         }
@@ -329,11 +323,11 @@ unsafe fn correct_format(f_ret: *mut u16) -> quirc_decode_error_t {
     if format_syndromes(u, s.as_mut_ptr()) == 0 {
         return QUIRC_SUCCESS;
     }
-    berlekamp_massey(s.as_mut_ptr(), 3 * 2, &gf16, sigma.as_mut_ptr());
+    berlekamp_massey(s.as_mut_ptr(), 3 * 2, &GF16, sigma.as_mut_ptr());
     /* Now, find the roots of the polynomial */
     let mut i = 0;
     while i < 15 {
-        if poly_eval(sigma.as_mut_ptr(), gf16_exp[(15 - i) as usize], &gf16) == 0 {
+        if poly_eval(sigma.as_mut_ptr(), GF16_EXP[(15 - i) as usize], &GF16) == 0 {
             u = (u as i32 ^ 1 << i) as u16
         }
         i += 1
@@ -457,7 +451,7 @@ unsafe fn reserved_cell(version: i32, i: i32, j: i32) -> i32 {
     }
     return 0;
 }
-unsafe fn read_bit(code: *const Code, data: *mut Data, mut ds: *mut datastream, i: i32, j: i32) {
+unsafe fn read_bit(code: *const Code, data: *mut Data, mut ds: *mut Datastream, i: i32, j: i32) {
     let bitpos: i32 = (*ds).data_bits & 7;
     let bytepos: i32 = (*ds).data_bits >> 3;
     let mut v: i32 = grid_bit(code, j, i);
@@ -469,7 +463,7 @@ unsafe fn read_bit(code: *const Code, data: *mut Data, mut ds: *mut datastream, 
     }
     (*ds).data_bits += 1;
 }
-unsafe fn read_data(code: *const Code, data: *mut Data, ds: *mut datastream) {
+unsafe fn read_data(code: *const Code, data: *mut Data, ds: *mut Datastream) {
     let mut y: i32 = (*code).size - 1;
     let mut x: i32 = (*code).size - 1;
     let mut dir: i32 = -1;
@@ -491,7 +485,7 @@ unsafe fn read_data(code: *const Code, data: *mut Data, ds: *mut datastream) {
         }
     }
 }
-unsafe fn codestream_ecc(data: *mut Data, mut ds: *mut datastream) -> quirc_decode_error_t {
+unsafe fn codestream_ecc(data: *mut Data, mut ds: *mut Datastream) -> quirc_decode_error_t {
     let ver: *const quirc_version_info =
         &*quirc_version_db.as_ptr().offset((*data).version as isize) as *const quirc_version_info;
     let sb_ecc: *const quirc_rs_params =
@@ -542,10 +536,10 @@ unsafe fn codestream_ecc(data: *mut Data, mut ds: *mut datastream) -> quirc_deco
     return QUIRC_SUCCESS;
 }
 #[inline]
-unsafe fn bits_remaining(ds: *const datastream) -> i32 {
+unsafe fn bits_remaining(ds: *const Datastream) -> i32 {
     return (*ds).data_bits - (*ds).ptr;
 }
-unsafe fn take_bits(mut ds: *mut datastream, mut len: i32) -> i32 {
+unsafe fn take_bits(mut ds: *mut Datastream, mut len: i32) -> i32 {
     let mut ret: i32 = 0;
     while len != 0 && (*ds).ptr < (*ds).data_bits {
         let b: u8 = (*ds).data[((*ds).ptr >> 3) as usize];
@@ -559,7 +553,7 @@ unsafe fn take_bits(mut ds: *mut datastream, mut len: i32) -> i32 {
     }
     return ret;
 }
-unsafe fn numeric_tuple(mut data: *mut Data, ds: *mut datastream, bits: i32, digits: i32) -> i32 {
+unsafe fn numeric_tuple(mut data: *mut Data, ds: *mut Datastream, bits: i32, digits: i32) -> i32 {
     if bits_remaining(ds) < bits {
         return -1;
     }
@@ -573,7 +567,7 @@ unsafe fn numeric_tuple(mut data: *mut Data, ds: *mut datastream, bits: i32, dig
     (*data).payload_len += digits;
     return 0;
 }
-unsafe fn decode_numeric(data: *mut Data, ds: *mut datastream) -> quirc_decode_error_t {
+unsafe fn decode_numeric(data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
     let mut bits: i32 = 14;
     if (*data).version < 10 {
         bits = 10
@@ -604,7 +598,7 @@ unsafe fn decode_numeric(data: *mut Data, ds: *mut datastream) -> quirc_decode_e
     }
     return QUIRC_SUCCESS;
 }
-unsafe fn alpha_tuple(mut data: *mut Data, ds: *mut datastream, bits: i32, digits: i32) -> i32 {
+unsafe fn alpha_tuple(mut data: *mut Data, ds: *mut Datastream, bits: i32, digits: i32) -> i32 {
     if bits_remaining(ds) < bits {
         return -1;
     }
@@ -622,7 +616,7 @@ unsafe fn alpha_tuple(mut data: *mut Data, ds: *mut datastream, bits: i32, digit
     (*data).payload_len += digits;
     return 0;
 }
-unsafe fn decode_alpha(data: *mut Data, ds: *mut datastream) -> quirc_decode_error_t {
+unsafe fn decode_alpha(data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
     let mut bits: i32 = 13;
     if (*data).version < 10 {
         bits = 9
@@ -647,7 +641,7 @@ unsafe fn decode_alpha(data: *mut Data, ds: *mut datastream) -> quirc_decode_err
     }
     return QUIRC_SUCCESS;
 }
-unsafe fn decode_byte(mut data: *mut Data, ds: *mut datastream) -> quirc_decode_error_t {
+unsafe fn decode_byte(mut data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
     let mut bits: i32 = 16;
     if (*data).version < 10 {
         bits = 8
@@ -668,7 +662,7 @@ unsafe fn decode_byte(mut data: *mut Data, ds: *mut datastream) -> quirc_decode_
     }
     return QUIRC_SUCCESS;
 }
-unsafe fn decode_kanji(mut data: *mut Data, ds: *mut datastream) -> quirc_decode_error_t {
+unsafe fn decode_kanji(mut data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
     let mut bits: i32 = 12;
     if (*data).version < 10 {
         bits = 8
@@ -706,7 +700,7 @@ unsafe fn decode_kanji(mut data: *mut Data, ds: *mut datastream) -> quirc_decode
     }
     return QUIRC_SUCCESS;
 }
-unsafe fn decode_eci(mut data: *mut Data, ds: *mut datastream) -> quirc_decode_error_t {
+unsafe fn decode_eci(mut data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
     if bits_remaining(ds) < 8 {
         return QUIRC_ERROR_DATA_UNDERFLOW;
     }
@@ -734,7 +728,7 @@ unsafe fn decode_eci(mut data: *mut Data, ds: *mut datastream) -> quirc_decode_e
     }
     return QUIRC_SUCCESS;
 }
-unsafe fn decode_payload(mut data: *mut Data, ds: *mut datastream) -> quirc_decode_error_t {
+unsafe fn decode_payload(mut data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
     while bits_remaining(ds) >= 4 {
         let type_0 = take_bits(ds, 4);
         let err = match type_0 {
@@ -764,7 +758,7 @@ unsafe fn decode_payload(mut data: *mut Data, ds: *mut datastream) -> quirc_deco
 
 /// Decode a QR-code, returning the payload data.
 pub unsafe fn quirc_decode(code: *const Code, mut data: *mut Data) -> quirc_decode_error_t {
-    let mut ds: datastream = datastream {
+    let mut ds: Datastream = Datastream {
         raw: [0; 8896],
         data_bits: 0,
         ptr: 0,
@@ -774,9 +768,9 @@ pub unsafe fn quirc_decode(code: *const Code, mut data: *mut Data) -> quirc_deco
         return QUIRC_ERROR_INVALID_GRID_SIZE;
     }
     memset(
-        &mut ds as *mut datastream as *mut libc::c_void,
+        &mut ds as *mut Datastream as *mut libc::c_void,
         0,
-        std::mem::size_of::<datastream>(),
+        std::mem::size_of::<Datastream>(),
     );
     (*data).version = ((*code).size - 17) / 4;
     if (*data).version < 1 || (*data).version > 40 {
