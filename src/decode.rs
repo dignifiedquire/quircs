@@ -224,13 +224,13 @@ fn eloc_poly(omega: &mut [u8], s: &[u8], sigma: &[u8], npar: usize) {
 }
 
 fn correct_block(data: &mut [u8], ecc: &RsParams) -> quirc_decode_error_t {
-    let npar = (*ecc).bs as usize - (*ecc).dw as usize;
+    let npar = ecc.bs as usize - ecc.dw as usize;
     let mut s: [u8; 64] = [0; 64];
     let mut sigma: [u8; 64] = [0; 64];
     let mut sigma_deriv: [u8; 64] = [0; 64];
     let mut omega: [u8; 64] = [0; 64];
     /* Compute syndrome vector */
-    if block_syndromes(data, (*ecc).bs, npar, &mut s) == 0 {
+    if block_syndromes(data, ecc.bs, npar, &mut s) == 0 {
         return QUIRC_SUCCESS;
     }
     berlekamp_massey(&s, npar, &GF256, &mut sigma);
@@ -245,7 +245,7 @@ fn correct_block(data: &mut [u8], ecc: &RsParams) -> quirc_decode_error_t {
 
     /* Find error locations and magnitudes */
     i = 0;
-    while i < (*ecc).bs {
+    while i < ecc.bs {
         let xinv = GF256_EXP[(255 - i) as usize];
         if poly_eval(&sigma, xinv, &GF256) == 0 {
             let sd_x = poly_eval(&sigma_deriv, xinv, &GF256);
@@ -254,12 +254,12 @@ fn correct_block(data: &mut [u8], ecc: &RsParams) -> quirc_decode_error_t {
                 + GF256_LOG[omega_x as usize] as i32)
                 % 255) as usize];
 
-            let index = ((*ecc).bs - i - 1) as usize;
+            let index = (ecc.bs - i - 1) as usize;
             data[index] = (data[index] as i32 ^ error as i32) as u8;
         }
         i += 1
     }
-    if block_syndromes(data, (*ecc).bs, npar, &mut s) != 0 {
+    if block_syndromes(data, ecc.bs, npar, &mut s) != 0 {
         return QUIRC_ERROR_DATA_ECC;
     }
     return QUIRC_SUCCESS;
@@ -288,10 +288,11 @@ fn format_syndromes(u: u16, s: &mut [u8]) -> i32 {
     nonzero
 }
 
-unsafe fn correct_format(f_ret: *mut u16) -> quirc_decode_error_t {
+fn correct_format(f_ret: &mut u16) -> quirc_decode_error_t {
     let mut u: u16 = *f_ret;
     let mut s: [u8; 64] = [0; 64];
     let mut sigma: [u8; 64] = [0; 64];
+
     /* Evaluate U (received codeword) at each of alpha_1 .. alpha_6
      * to get S_1 .. S_6 (but we index them from 0).
      */
@@ -299,19 +300,20 @@ unsafe fn correct_format(f_ret: *mut u16) -> quirc_decode_error_t {
         return QUIRC_SUCCESS;
     }
     berlekamp_massey(&s, 3 * 2, &GF16, &mut sigma);
+
     /* Now, find the roots of the polynomial */
-    let mut i = 0;
-    while i < 15 {
+    for i in 0..15 {
         if poly_eval(&sigma, GF16_EXP[(15 - i) as usize], &GF16) == 0 {
             u = (u as i32 ^ 1 << i) as u16
         }
-        i += 1
     }
+
     if format_syndromes(u, &mut s) != 0 {
         return QUIRC_ERROR_FORMAT_ECC;
     }
     *f_ret = u;
-    return QUIRC_SUCCESS;
+
+    QUIRC_SUCCESS
 }
 
 #[inline]
@@ -320,36 +322,32 @@ fn grid_bit(code: &Code, x: i32, y: i32) -> i32 {
     code.cell_bitmap[(p >> 3) as usize] as i32 >> (p & 7) & 1
 }
 
-unsafe fn read_format(code: &Code, mut data: *mut Data, which: i32) -> quirc_decode_error_t {
+fn read_format(code: &Code, data: &mut Data, which: i32) -> quirc_decode_error_t {
     let mut format: u16 = 0 as u16;
     if which != 0 {
-        let mut i = 0;
-        while i < 7 {
+        for i in 0..7 {
             format = ((format as i32) << 1 | grid_bit(code, 8, code.size - 1 - i)) as u16;
-            i += 1
         }
-        i = 0;
-        while i < 8 {
-            format = ((format as i32) << 1 | grid_bit(code, (*code).size - 8 + i, 8)) as u16;
-            i += 1
+        for i in 0..8 {
+            format = ((format as i32) << 1 | grid_bit(code, code.size - 8 + i, 8)) as u16;
         }
     } else {
-        static mut xs: [i32; 15] = [8, 8, 8, 8, 8, 8, 8, 8, 7, 5, 4, 3, 2, 1, 0];
-        static mut ys: [i32; 15] = [0, 1, 2, 3, 4, 5, 7, 8, 8, 8, 8, 8, 8, 8, 8];
-        let mut i = 14;
-        while i >= 0 {
+        static xs: [i32; 15] = [8, 8, 8, 8, 8, 8, 8, 8, 7, 5, 4, 3, 2, 1, 0];
+        static ys: [i32; 15] = [0, 1, 2, 3, 4, 5, 7, 8, 8, 8, 8, 8, 8, 8, 8];
+
+        for i in (0..=14).rev() {
             format = ((format as i32) << 1 | grid_bit(code, xs[i as usize], ys[i as usize])) as u16;
-            i -= 1
         }
     }
     format = (format as i32 ^ 0x5412) as u16;
+
     let err = correct_format(&mut format);
     if err as u64 != 0 {
         return err;
     }
     let fdata = (format as i32 >> 10) as u16;
-    (*data).ecc_level = EccLevel::from_i32(fdata as i32 >> 3).unwrap();
-    (*data).mask = fdata as i32 & 7;
+    data.ecc_level = EccLevel::from_i32(fdata as i32 >> 3).unwrap();
+    data.mask = fdata as i32 & 7;
 
     QUIRC_SUCCESS
 }
@@ -403,8 +401,8 @@ fn reserved_cell(version: i32, i: i32, j: i32) -> i32 {
     }
     /* Exclude alignment patterns */
     let mut a = 0;
-    while a < 7 && (*ver).apat[a as usize] != 0 {
-        let p: i32 = (*ver).apat[a as usize];
+    while a < 7 && ver.apat[a as usize] != 0 {
+        let p: i32 = ver.apat[a as usize];
         if (p - i).abs() < 3 {
             ai = a
         }
@@ -427,20 +425,21 @@ fn reserved_cell(version: i32, i: i32, j: i32) -> i32 {
     }
     return 0;
 }
-unsafe fn read_bit(code: &Code, data: *mut Data, mut ds: *mut Datastream, i: i32, j: i32) {
-    let bitpos: i32 = (*ds).data_bits & 7;
-    let bytepos: i32 = (*ds).data_bits >> 3;
+
+fn read_bit(code: &Code, data: &mut Data, mut ds: &mut Datastream, i: i32, j: i32) {
+    let bitpos: i32 = ds.data_bits & 7;
+    let bytepos: i32 = ds.data_bits >> 3;
     let mut v: i32 = grid_bit(code, j, i);
-    if mask_bit((*data).mask, i, j) != 0 {
+    if mask_bit(data.mask, i, j) != 0 {
         v ^= 1
     }
     if v != 0 {
-        (*ds).raw[bytepos as usize] = ((*ds).raw[bytepos as usize] as i32 | 0x80 >> bitpos) as u8;
+        ds.raw[bytepos as usize] = (ds.raw[bytepos as usize] as i32 | 0x80 >> bitpos) as u8;
     }
-    (*ds).data_bits += 1;
+    ds.data_bits += 1;
 }
 
-unsafe fn read_data(code: &Code, data: *mut Data, ds: *mut Datastream) {
+fn read_data(code: &Code, data: &mut Data, ds: &mut Datastream) {
     let mut y: i32 = code.size - 1;
     let mut x: i32 = code.size - 1;
     let mut dir: i32 = -1;
@@ -448,10 +447,10 @@ unsafe fn read_data(code: &Code, data: *mut Data, ds: *mut Datastream) {
         if x == 6 {
             x -= 1
         }
-        if reserved_cell((*data).version, y, x) == 0 {
+        if reserved_cell(data.version, y, x) == 0 {
             read_bit(code, data, ds, y, x);
         }
-        if reserved_cell((*data).version, y, x - 1) == 0 {
+        if reserved_cell(data.version, y, x - 1) == 0 {
             read_bit(code, data, ds, y, x - 1);
         }
         y += dir;
@@ -463,13 +462,13 @@ unsafe fn read_data(code: &Code, data: *mut Data, ds: *mut Datastream) {
     }
 }
 
-unsafe fn codestream_ecc(data: *mut Data, mut ds: *mut Datastream) -> quirc_decode_error_t {
-    let ver = &VERSION_DB[(*data).version as usize];
-    let sb_ecc = &ver.ecc[(*data).ecc_level as usize];
+fn codestream_ecc(data: &mut Data, mut ds: &mut Datastream) -> quirc_decode_error_t {
+    let ver = &VERSION_DB[data.version as usize];
+    let sb_ecc = &ver.ecc[data.ecc_level as usize];
 
-    let lb_count = ((*ver).data_bytes - (*sb_ecc).bs * (*sb_ecc).ns) / ((*sb_ecc).bs + 1);
-    let bc = lb_count + (*sb_ecc).ns;
-    let ecc_offset = (*sb_ecc).dw * bc + lb_count;
+    let lb_count = (ver.data_bytes - sb_ecc.bs * sb_ecc.ns) / (sb_ecc.bs + 1);
+    let bc = lb_count + sb_ecc.ns;
+    let ecc_offset = sb_ecc.dw * bc + lb_count;
     let mut dst_offset = 0;
 
     let mut lb_ecc = sb_ecc.clone();
@@ -477,121 +476,121 @@ unsafe fn codestream_ecc(data: *mut Data, mut ds: *mut Datastream) -> quirc_deco
     lb_ecc.bs += 1;
 
     for i in 0..bc {
-        let dst = &mut (*ds).data[dst_offset as usize..];
-        let ecc = if i < (*sb_ecc).ns { sb_ecc } else { &lb_ecc };
-        let num_ec = (*ecc).bs - (*ecc).dw;
-        for j in 0..(*ecc).dw {
-            dst[j as usize] = (*ds).raw[(j * bc + i) as usize];
+        let dst = &mut ds.data[dst_offset as usize..];
+        let ecc = if i < sb_ecc.ns { sb_ecc } else { &lb_ecc };
+        let num_ec = ecc.bs - ecc.dw;
+        for j in 0..ecc.dw {
+            dst[j as usize] = ds.raw[(j * bc + i) as usize];
         }
         for j in 0..num_ec {
-            dst[((*ecc).dw + j) as usize] = (*ds).raw[(ecc_offset + j * bc + i) as usize];
+            dst[(ecc.dw + j) as usize] = ds.raw[(ecc_offset + j * bc + i) as usize];
         }
 
         let err = correct_block(dst, ecc);
         if err as u64 != 0 {
             return err;
         }
-        dst_offset += (*ecc).dw;
+        dst_offset += ecc.dw;
     }
 
-    (*ds).data_bits = dst_offset * 8;
+    ds.data_bits = dst_offset * 8;
     QUIRC_SUCCESS
 }
 
 #[inline]
-unsafe fn bits_remaining(ds: *const Datastream) -> i32 {
-    return (*ds).data_bits - (*ds).ptr;
+fn bits_remaining(ds: &Datastream) -> i32 {
+    ds.data_bits - ds.ptr
 }
 
-unsafe fn take_bits(mut ds: *mut Datastream, mut len: i32) -> i32 {
+fn take_bits(mut ds: &mut Datastream, mut len: i32) -> i32 {
     let mut ret: i32 = 0;
-    while len != 0 && (*ds).ptr < (*ds).data_bits {
-        let b: u8 = (*ds).data[((*ds).ptr >> 3) as usize];
-        let bitpos: i32 = (*ds).ptr & 7;
+    while len != 0 && ds.ptr < ds.data_bits {
+        let b: u8 = ds.data[(ds.ptr >> 3) as usize];
+        let bitpos: i32 = ds.ptr & 7;
         ret <<= 1;
         if (b as i32) << bitpos & 0x80 != 0 {
             ret |= 1
         }
-        (*ds).ptr += 1;
+        ds.ptr += 1;
         len -= 1
     }
-    return ret;
+
+    ret
 }
 
-unsafe fn numeric_tuple(mut data: *mut Data, ds: *mut Datastream, bits: i32, digits: i32) -> i32 {
+fn numeric_tuple(mut data: &mut Data, ds: &mut Datastream, bits: i32, digits: i32) -> i32 {
     if bits_remaining(ds) < bits {
         return -1;
     }
     let mut tuple = take_bits(ds, bits);
     let mut i = digits - 1;
     while i >= 0 {
-        (*data).payload[((*data).payload_len + i) as usize] = (tuple % 10 + '0' as i32) as u8;
+        data.payload[(data.payload_len + i) as usize] = (tuple % 10 + '0' as i32) as u8;
         tuple /= 10;
         i -= 1
     }
-    (*data).payload_len += digits;
-    return 0;
+    data.payload_len += digits;
+
+    0
 }
 
-unsafe fn decode_numeric(data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
+fn decode_numeric(data: &mut Data, ds: &mut Datastream) -> quirc_decode_error_t {
     let mut bits: i32 = 14;
-    if (*data).version < 10 {
-        bits = 10
-    } else if (*data).version < 27 {
-        bits = 12
+    if data.version < 10 {
+        bits = 10;
+    } else if data.version < 27 {
+        bits = 12;
     }
     let mut count = take_bits(ds, bits);
-    if (*data).payload_len + count + 1 > 8896 {
+    if data.payload_len + count + 1 > 8896 {
         return QUIRC_ERROR_DATA_OVERFLOW;
     }
     while count >= 3 {
         if numeric_tuple(data, ds, 10, 3) < 0 {
             return QUIRC_ERROR_DATA_UNDERFLOW;
         }
-        count -= 3
+        count -= 3;
     }
     if count >= 2 {
         if numeric_tuple(data, ds, 7, 2) < 0 {
             return QUIRC_ERROR_DATA_UNDERFLOW;
         }
-        count -= 2
+        count -= 2;
     }
     if count != 0 {
         if numeric_tuple(data, ds, 4, 1) < 0 {
             return QUIRC_ERROR_DATA_UNDERFLOW;
         }
-        count -= 1
+        count -= 1;
     }
-    return QUIRC_SUCCESS;
+    QUIRC_SUCCESS
 }
-unsafe fn alpha_tuple(mut data: *mut Data, ds: *mut Datastream, bits: i32, digits: i32) -> i32 {
+
+fn alpha_tuple(mut data: &mut Data, ds: &mut Datastream, bits: i32, digits: i32) -> i32 {
     if bits_remaining(ds) < bits {
         return -1;
     }
     let mut tuple = take_bits(ds, bits);
-    let mut i = 0;
-    while i < digits {
-        static mut alpha_map: *const libc::c_char =
-            b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:\x00" as *const u8
-                as *const libc::c_char;
-        (*data).payload[((*data).payload_len + digits - i - 1) as usize] =
-            *alpha_map.offset((tuple % 45) as isize) as u8;
+    static alpha_map: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+
+    for i in 0..digits {
+        data.payload[(data.payload_len + digits - i - 1) as usize] =
+            alpha_map[(tuple % 45) as usize] as u8;
         tuple /= 45;
-        i += 1
     }
-    (*data).payload_len += digits;
-    return 0;
+    data.payload_len += digits;
+    0
 }
 
-unsafe fn decode_alpha(data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
+fn decode_alpha(data: &mut Data, ds: &mut Datastream) -> quirc_decode_error_t {
     let mut bits: i32 = 13;
-    if (*data).version < 10 {
+    if data.version < 10 {
         bits = 9
-    } else if (*data).version < 27 {
+    } else if data.version < 27 {
         bits = 11
     }
     let mut count = take_bits(ds, bits);
-    if (*data).payload_len + count + 1 > 8896 {
+    if data.payload_len + count + 1 > 8896 {
         return QUIRC_ERROR_DATA_OVERFLOW;
     }
     while count >= 2 {
@@ -609,97 +608,99 @@ unsafe fn decode_alpha(data: *mut Data, ds: *mut Datastream) -> quirc_decode_err
     return QUIRC_SUCCESS;
 }
 
-unsafe fn decode_byte(mut data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
-    let mut bits: i32 = 16;
-    if (*data).version < 10 {
-        bits = 8
+fn decode_byte(mut data: &mut Data, ds: &mut Datastream) -> quirc_decode_error_t {
+    let mut bits = 16;
+    if data.version < 10 {
+        bits = 8;
     }
     let count = take_bits(ds, bits);
-    if (*data).payload_len + count + 1 > 8896 {
+    if data.payload_len + count + 1 > 8896 {
         return QUIRC_ERROR_DATA_OVERFLOW;
     }
     if bits_remaining(ds) < count * 8 {
         return QUIRC_ERROR_DATA_UNDERFLOW;
     }
-    let mut i = 0;
-    while i < count {
-        let fresh5 = (*data).payload_len;
-        (*data).payload_len = (*data).payload_len + 1;
-        (*data).payload[fresh5 as usize] = take_bits(ds, 8) as u8;
-        i += 1
+
+    for i in 0..count {
+        let len = data.payload_len;
+        data.payload_len = data.payload_len + 1;
+        data.payload[len as usize] = take_bits(ds, 8) as u8;
     }
-    return QUIRC_SUCCESS;
+
+    QUIRC_SUCCESS
 }
 
-unsafe fn decode_kanji(mut data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
-    let mut bits: i32 = 12;
-    if (*data).version < 10 {
-        bits = 8
-    } else if (*data).version < 27 {
-        bits = 10
+fn decode_kanji(mut data: &mut Data, ds: &mut Datastream) -> quirc_decode_error_t {
+    let mut bits = 12;
+    if data.version < 10 {
+        bits = 8;
+    } else if data.version < 27 {
+        bits = 10;
     }
+
     let count = take_bits(ds, bits);
-    if (*data).payload_len + count * 2 + 1 > 8896 {
+    if data.payload_len + count * 2 + 1 > 8896 {
         return QUIRC_ERROR_DATA_OVERFLOW;
     }
     if bits_remaining(ds) < count * 13 {
         return QUIRC_ERROR_DATA_UNDERFLOW;
     }
-    let mut i = 0;
-    while i < count {
-        let d: i32 = take_bits(ds, 13);
-        let msB: i32 = d / 0xc0;
-        let lsB: i32 = d % 0xc0;
-        let intermediate: i32 = msB << 8 | lsB;
-        let sjw: u16;
-        if intermediate + 0x8140 <= 0x9ffc {
+
+    for i in 0..count {
+        let d = take_bits(ds, 13);
+        let msB = d / 0xc0;
+        let lsB = d % 0xc0;
+        let intermediate = msB << 8 | lsB;
+        let sjw = if intermediate + 0x8140 <= 0x9ffc {
             /* bytes are in the range 0x8140 to 0x9FFC */
-            sjw = (intermediate + 0x8140) as u16
+            (intermediate + 0x8140) as u16
         } else {
             /* bytes are in the range 0xE040 to 0xEBBF */
-            sjw = (intermediate + 0xc140) as u16
-        }
-        let fresh6 = (*data).payload_len;
-        (*data).payload_len = (*data).payload_len + 1;
-        (*data).payload[fresh6 as usize] = (sjw as i32 >> 8) as u8;
-        let fresh7 = (*data).payload_len;
-        (*data).payload_len = (*data).payload_len + 1;
-        (*data).payload[fresh7 as usize] = (sjw as i32 & 0xff) as u8;
-        i += 1
+            (intermediate + 0xc140) as u16
+        };
+
+        let len = data.payload_len;
+        data.payload_len = data.payload_len + 1;
+        data.payload[len as usize] = (sjw as i32 >> 8) as u8;
+        let fresh7 = data.payload_len;
+        data.payload_len = data.payload_len + 1;
+        data.payload[fresh7 as usize] = (sjw as i32 & 0xff) as u8;
     }
-    return QUIRC_SUCCESS;
+
+    QUIRC_SUCCESS
 }
 
-unsafe fn decode_eci(mut data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
+fn decode_eci(mut data: &mut Data, ds: &mut Datastream) -> quirc_decode_error_t {
     if bits_remaining(ds) < 8 {
         return QUIRC_ERROR_DATA_UNDERFLOW;
     }
-    (*data).eci = Eci::from_u32(take_bits(ds, 8) as u32);
-    if (*data).eci.and_then(|e| e.to_u32()).unwrap_or_default() & 0xc0 as libc::c_uint
+    data.eci = Eci::from_u32(take_bits(ds, 8) as u32);
+    if data.eci.and_then(|e| e.to_u32()).unwrap_or_default() & 0xc0 as libc::c_uint
         == 0x80 as libc::c_uint
     {
         if bits_remaining(ds) < 8 {
             return QUIRC_ERROR_DATA_UNDERFLOW;
         }
-        (*data).eci = Eci::from_u32(
-            (*data).eci.and_then(|e| e.to_u32()).unwrap_or_default() << 8
+        data.eci = Eci::from_u32(
+            data.eci.and_then(|e| e.to_u32()).unwrap_or_default() << 8
                 | take_bits(ds, 8) as libc::c_uint,
         );
-    } else if (*data).eci.and_then(|e| e.to_u32()).unwrap_or_default() & 0xe0 as libc::c_uint
+    } else if data.eci.and_then(|e| e.to_u32()).unwrap_or_default() & 0xe0 as libc::c_uint
         == 0xc0 as libc::c_uint
     {
         if bits_remaining(ds) < 16 {
             return QUIRC_ERROR_DATA_UNDERFLOW;
         }
-        (*data).eci = Eci::from_u32(
-            (*data).eci.and_then(|e| e.to_u32()).unwrap_or_default() << 16
+        data.eci = Eci::from_u32(
+            data.eci.and_then(|e| e.to_u32()).unwrap_or_default() << 16
                 | take_bits(ds, 16) as libc::c_uint,
         );
     }
-    return QUIRC_SUCCESS;
+
+    QUIRC_SUCCESS
 }
 
-unsafe fn decode_payload(mut data: *mut Data, ds: *mut Datastream) -> quirc_decode_error_t {
+fn decode_payload(mut data: &mut Data, ds: &mut Datastream) -> quirc_decode_error_t {
     while bits_remaining(ds) >= 4 {
         let type_0 = take_bits(ds, 4);
         let err = match type_0 {
@@ -715,34 +716,37 @@ unsafe fn decode_payload(mut data: *mut Data, ds: *mut Datastream) -> quirc_deco
         if err as u64 != 0 {
             return err;
         }
-        if type_0 & type_0 - 1 == 0 && type_0 > (*data).data_type {
-            (*data).data_type = type_0
+        if type_0 & type_0 - 1 == 0 && type_0 > data.data_type {
+            data.data_type = type_0
         }
     }
     /* Add nul terminator to all payloads */
-    if (*data).payload_len >= ::std::mem::size_of::<[u8; 8896]>() as libc::c_ulong as i32 {
-        (*data).payload_len -= 1
+    if data.payload_len >= ::std::mem::size_of::<[u8; 8896]>() as i32 {
+        data.payload_len -= 1;
     }
-    (*data).payload[(*data).payload_len as usize] = 0;
-    return QUIRC_SUCCESS;
+    data.payload[data.payload_len as usize] = 0;
+
+    QUIRC_SUCCESS
 }
 
 /// Decode a QR-code, returning the payload data.
-pub unsafe fn quirc_decode(code: &Code, mut data: *mut Data) -> quirc_decode_error_t {
+pub fn quirc_decode(code: &Code, mut data: &mut Data) -> quirc_decode_error_t {
     let mut ds: Datastream = Datastream {
         raw: [0; 8896],
         data_bits: 0,
         ptr: 0,
         data: [0; 8896],
     };
+
     if (code.size - 17) % 4 != 0 {
         return QUIRC_ERROR_INVALID_GRID_SIZE;
     }
 
-    (*data).version = (code.size - 17) / 4;
-    if (*data).version < 1 || (*data).version > 40 {
+    data.version = (code.size - 17) / 4;
+    if data.version < 1 || data.version > 40 {
         return QUIRC_ERROR_INVALID_VERSION;
     }
+
     /* Read format information -- try both locations */
     let mut err = read_format(code, data, 0);
     if err as u64 != 0 {
