@@ -2,7 +2,6 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
-#![allow(unused_mut)]
 #![feature(extern_types)]
 
 use libc;
@@ -209,7 +208,7 @@ static mut want_verbose: libc::c_int = 1i32;
 static mut want_cell_dump: libc::c_int = 0i32;
 static mut decoder: *mut Quirc = 0 as *const Quirc as *mut Quirc;
 
-unsafe fn print_result(mut name: *const libc::c_char, mut info: *mut result_info) {
+unsafe fn print_result(name: *const libc::c_char, info: *mut result_info) {
     puts(
         b"-------------------------------------------------------------------------------\x00"
             as *const u8 as *const libc::c_char,
@@ -251,7 +250,7 @@ unsafe fn print_result(mut name: *const libc::c_char, mut info: *mut result_info
         );
     };
 }
-unsafe fn add_result(mut sum: *mut result_info, mut inf: *mut result_info) {
+unsafe fn add_result(mut sum: *mut result_info, inf: *mut result_info) {
     (*sum).file_count += (*inf).file_count;
     (*sum).id_count += (*inf).id_count;
     (*sum).decode_count += (*inf).decode_count;
@@ -293,7 +292,7 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
     clock_gettime(_CLOCK_PROCESS_CPUTIME_ID, &mut tp);
     let mut start = (tp.tv_sec * 1000i32 as libc::c_long + tp.tv_nsec / 1000000i32 as libc::c_long)
         as libc::c_uint;
-    let mut total_start = start;
+    let total_start = start;
 
     let ret = if path.extension().unwrap() == "jpg" || path.extension().unwrap() == "jpeg" {
         load_jpeg(decoder, &path)
@@ -379,7 +378,7 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
                     payload_len: 0,
                     eci: 0,
                 };
-                let mut err = quirc_decode(&mut code_0, &mut data_0);
+                let err = quirc_decode(&mut code_0, &mut data_0);
                 if err as u64 != 0 {
                     printf(
                         b"  ERROR: %s\n\n\x00" as *const u8 as *const libc::c_char,
@@ -398,7 +397,7 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> libc::c_int {
     return 1i32;
 }
 
-unsafe fn test_scan(path: &str, mut info: *mut result_info) -> libc::c_int {
+unsafe fn test_scan(path: &str, info: *mut result_info) -> libc::c_int {
     scan_file(path, info)
 }
 
@@ -523,6 +522,6 @@ unsafe fn dump_cells(code: *const quirc_code) {
 }
 
 fn main() {
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = std::env::args().skip(1).collect();
     unsafe { std::process::exit(main_0(args) as i32) }
 }

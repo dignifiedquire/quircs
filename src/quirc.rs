@@ -111,7 +111,7 @@ pub fn quirc_version() -> &'static str {
 /// Construct a new QR-code recognizer. This function will return NULL
 /// if sufficient memory could not be allocated.
 pub unsafe fn quirc_new() -> *mut Quirc {
-    let mut q: *mut Quirc = malloc(std::mem::size_of::<Quirc>()) as *mut Quirc;
+    let q: *mut Quirc = malloc(std::mem::size_of::<Quirc>()) as *mut Quirc;
     if q.is_null() {
         return 0 as *mut Quirc;
     }
@@ -120,7 +120,7 @@ pub unsafe fn quirc_new() -> *mut Quirc {
 }
 
 /// Destroy a QR-code recognizer.
-pub unsafe fn quirc_destroy(mut q: *mut Quirc) {
+pub unsafe fn quirc_destroy(q: *mut Quirc) {
     free((*q).image as *mut libc::c_void);
     /* q->pixels may alias q->image when their type representation is of the
     same size, so we need to be careful here to avoid a double free */
@@ -134,12 +134,12 @@ pub unsafe fn quirc_destroy(mut q: *mut Quirc) {
 /// specified before codes can be analyzed.
 ///
 /// This function returns 0 on success, or -1 if sufficient memory could  not be allocated.
-pub unsafe fn quirc_resize(mut q: *mut Quirc, mut w: usize, mut h: usize) -> libc::c_int {
-    let mut olddim: usize;
-    let mut newdim: usize;
-    let mut min: usize;
-    let mut current_block: u64;
-    let mut image: *mut uint8_t;
+pub unsafe fn quirc_resize(mut q: *mut Quirc, w: usize, h: usize) -> libc::c_int {
+    let olddim: usize;
+    let newdim: usize;
+    let min: usize;
+    let current_block: u64;
+    let image: *mut uint8_t;
     let mut pixels: *mut quirc_pixel_t = 0 as *mut quirc_pixel_t;
     /*
      * XXX: w and h should be usize (or at least unsigned) as negatives
@@ -261,7 +261,7 @@ static mut error_table: [*const libc::c_char; 8] = [
     b"Data underflow\x00" as *const u8 as *const libc::c_char,
 ];
 
-pub unsafe fn quirc_strerror(mut err: quirc_decode_error_t) -> *const libc::c_char {
+pub unsafe fn quirc_strerror(err: quirc_decode_error_t) -> *const libc::c_char {
     if err as libc::c_uint >= 0i32 as libc::c_uint
         && (err as libc::c_ulong)
             < (::std::mem::size_of::<[*const libc::c_char; 8]>() as libc::c_ulong)
