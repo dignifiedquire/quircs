@@ -120,7 +120,7 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
         };
         let mut data = Data::default();
         decoder.extract(i, &mut code);
-        if quirc_decode(&mut code, &mut data) as u64 == 0 {
+        if quirc_decode(&mut code, &mut data).is_ok() {
             (*info).decode_count += 1
         }
     }
@@ -152,9 +152,8 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
 
             if opts.verbose {
                 let mut data_0 = Data::default();
-                let err = quirc_decode(&mut code_0, &mut data_0);
-                if err as u64 != 0 {
-                    println!("  ERROR: {}\n", quirc_strerror(err),);
+                if let Err(err) = quirc_decode(&mut code_0, &mut data_0) {
+                    println!("  ERROR: {}\n", err);
                 } else {
                     println!("\n  Decode successful:");
                     dump_data(&mut data_0);

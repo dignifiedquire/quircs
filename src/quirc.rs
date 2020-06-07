@@ -1,7 +1,6 @@
 use num_derive::{FromPrimitive, ToPrimitive};
 
 pub type Pixel = u16;
-pub type DecodeError = u32;
 
 #[derive(Debug, Clone, Default)]
 pub struct Quirc {
@@ -88,15 +87,6 @@ pub struct Region {
     pub count: i32,
     pub capstone: i32,
 }
-
-pub const QUIRC_ERROR_DATA_UNDERFLOW: DecodeError = 7;
-pub const QUIRC_ERROR_DATA_OVERFLOW: DecodeError = 6;
-pub const QUIRC_ERROR_UNKNOWN_DATA_TYPE: DecodeError = 5;
-pub const QUIRC_ERROR_DATA_ECC: DecodeError = 4;
-pub const QUIRC_ERROR_FORMAT_ECC: DecodeError = 3;
-pub const QUIRC_ERROR_INVALID_VERSION: DecodeError = 2;
-pub const QUIRC_ERROR_INVALID_GRID_SIZE: DecodeError = 1;
-pub const QUIRC_SUCCESS: DecodeError = 0;
 
 /// This structure is used to return information about detected QR codes
 /// in the input image.
@@ -206,23 +196,4 @@ pub enum Eci {
     Iso8859_15 = 17,
     ShiftJis = 20,
     Utf8 = 26,
-}
-
-static ERROR_TABLE: [&str; 8] = [
-    "Success",
-    "Invalid grid size",
-    "Invalid version",
-    "Format data ECC failure",
-    "ECC failure",
-    "Unknown data type",
-    "Data overflow",
-    "Data underflow",
-];
-
-pub fn quirc_strerror(err: DecodeError) -> &'static str {
-    if (err as usize) < ERROR_TABLE.len() {
-        return ERROR_TABLE[err as usize];
-    }
-
-    "Unknown error"
 }
