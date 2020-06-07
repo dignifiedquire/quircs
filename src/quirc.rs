@@ -171,8 +171,8 @@ impl Default for Data {
 }
 
 /// Obtain the library version string.
-pub fn version() -> &'static str {
-    "1.0"
+pub fn version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
 }
 
 /// QR-code ECC types.

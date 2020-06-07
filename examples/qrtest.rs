@@ -212,7 +212,7 @@ fn dump_cells(code: &Code) {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
-    println!("quirc test program");
+    println!("quircs test program");
     println!("Library version: {}\n", version());
 
     let opts = Opts {
