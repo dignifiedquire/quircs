@@ -651,21 +651,24 @@ unsafe fn read_cell(q: *const Quirc, index: i32, x: i32, y: i32) -> i32 {
     }
 }
 
-unsafe fn fitness_cell(q: *const Quirc, index: i32, x: i32, y: i32) -> i32 {
-    let qr = &(*q).grids[index as usize];
+#[derive(Debug)]
+struct Image<'a> {
+    pixels: &'a [Pixel],
+    width: usize,
+    height: usize,
+}
+
+fn fitness_cell(qr: &Grid, image: &Image<'_>, x: i32, y: i32) -> i32 {
+    static OFFSETS: [f64; 3] = [0.3, 0.5, 0.7];
+
     let mut score = 0;
     for v in 0..3 {
         for u in 0..3 {
-            static OFFSETS: [f64; 3] = [0.3, 0.5, 0.7];
-            let mut p: Point = Point { x: 0, y: 0 };
-            perspective_map(
-                &qr.c,
-                x as f64 + OFFSETS[u as usize],
-                y as f64 + OFFSETS[v as usize],
-                &mut p,
-            );
-            if !(p.y < 0 || p.y >= (*q).h as i32 || p.x < 0 || p.x >= (*q).w as i32) {
-                if (*q).pixels[(p.y * (*q).w as i32 + p.x) as usize] != 0 {
+            let mut p = Point::default();
+            perspective_map(&qr.c, x as f64 + OFFSETS[u], y as f64 + OFFSETS[v], &mut p);
+
+            if !(p.y < 0 || p.y >= image.height as i32 || p.x < 0 || p.x >= image.width as i32) {
+                if image.pixels[(p.y * image.width as i32 + p.x) as usize] != 0 {
                     score += 1
                 } else {
                     score -= 1
@@ -677,36 +680,43 @@ unsafe fn fitness_cell(q: *const Quirc, index: i32, x: i32, y: i32) -> i32 {
     score
 }
 
-unsafe fn fitness_ring(q: *const Quirc, index: i32, cx: i32, cy: i32, radius: i32) -> i32 {
+fn fitness_ring(qr: &Grid, image: &Image<'_>, cx: i32, cy: i32, radius: i32) -> i32 {
     let mut score: i32 = 0;
     for i in 0..radius * 2 {
-        score += fitness_cell(q, index, cx - radius + i, cy - radius);
-        score += fitness_cell(q, index, cx - radius, cy + radius - i);
-        score += fitness_cell(q, index, cx + radius, cy - radius + i);
-        score += fitness_cell(q, index, cx + radius - i, cy + radius);
+        score += fitness_cell(qr, image, cx - radius + i, cy - radius);
+        score += fitness_cell(qr, image, cx - radius, cy + radius - i);
+        score += fitness_cell(qr, image, cx + radius, cy - radius + i);
+        score += fitness_cell(qr, image, cx + radius - i, cy + radius);
     }
 
     score
 }
 
-unsafe fn fitness_apat(q: *const Quirc, index: i32, cx: i32, cy: i32) -> i32 {
-    fitness_cell(q, index, cx, cy) - fitness_ring(q, index, cx, cy, 1)
-        + fitness_ring(q, index, cx, cy, 2)
+fn fitness_apat(qr: &Grid, image: &Image<'_>, cx: i32, cy: i32) -> i32 {
+    fitness_cell(qr, image, cx, cy) - fitness_ring(qr, image, cx, cy, 1)
+        + fitness_ring(qr, image, cx, cy, 2)
 }
 
-unsafe fn fitness_capstone(q: *const Quirc, index: i32, mut x: i32, mut y: i32) -> i32 {
+fn fitness_capstone(qr: &Grid, image: &Image<'_>, mut x: i32, mut y: i32) -> i32 {
     x += 3;
     y += 3;
 
-    fitness_cell(q, index, x, y) + fitness_ring(q, index, x, y, 1) - fitness_ring(q, index, x, y, 2)
-        + fitness_ring(q, index, x, y, 3)
+    fitness_cell(qr, image, x, y) + fitness_ring(qr, image, x, y, 1)
+        - fitness_ring(qr, image, x, y, 2)
+        + fitness_ring(qr, image, x, y, 3)
 }
 
 /// Compute a fitness score for the currently configured perspective
 /// transform, using the features we expect to find by scanning the
 /// grid.
-unsafe fn fitness_all(q: *const Quirc, index: i32) -> i32 {
-    let qr = &(*q).grids[index as usize];
+fn fitness_all(q: &Quirc, index: i32) -> i32 {
+    let qr = &q.grids[index as usize];
+    let image = Image {
+        pixels: &q.pixels,
+        width: q.w,
+        height: q.h,
+    };
+
     let version = (qr.grid_size - 17) / 4;
     let info = &VERSION_DB[version as usize];
     let mut score: i32 = 0;
@@ -714,14 +724,14 @@ unsafe fn fitness_all(q: *const Quirc, index: i32) -> i32 {
     /* Check the timing pattern */
     for i in 0..qr.grid_size - 14 {
         let expect = if i & 1 != 0 { 1 } else { -1 };
-        score += fitness_cell(q, index, i + 7, 6) * expect;
-        score += fitness_cell(q, index, 6, i + 7) * expect;
+        score += fitness_cell(qr, &image, i + 7, 6) * expect;
+        score += fitness_cell(qr, &image, 6, i + 7) * expect;
     }
 
     /* Check capstones */
-    score += fitness_capstone(q, index, 0, 0);
-    score += fitness_capstone(q, index, qr.grid_size - 7, 0);
-    score += fitness_capstone(q, index, 0, qr.grid_size - 7);
+    score += fitness_capstone(qr, &image, 0, 0);
+    score += fitness_capstone(qr, &image, qr.grid_size - 7, 0);
+    score += fitness_capstone(qr, &image, 0, qr.grid_size - 7);
     if version < 0 || version > 40 {
         return score;
     }
@@ -732,13 +742,13 @@ unsafe fn fitness_all(q: *const Quirc, index: i32) -> i32 {
         ap_count += 1
     }
     for i in 1..ap_count - 1 {
-        score += fitness_apat(q, index, 6, info.apat[i as usize]);
-        score += fitness_apat(q, index, info.apat[i as usize], 6);
+        score += fitness_apat(qr, &image, 6, info.apat[i as usize]);
+        score += fitness_apat(qr, &image, info.apat[i as usize], 6);
     }
 
     for i in 1..ap_count {
         for j in 1..ap_count {
-            score += fitness_apat(q, index, info.apat[i as usize], info.apat[j as usize]);
+            score += fitness_apat(qr, &image, info.apat[i as usize], info.apat[j as usize]);
         }
     }
 
@@ -747,7 +757,7 @@ unsafe fn fitness_all(q: *const Quirc, index: i32) -> i32 {
 
 unsafe fn jiggle_perspective(q: *mut Quirc, index: i32) {
     let mut qr = &mut (*q).grids[index as usize];
-    let mut best = fitness_all(q, index);
+    let mut best = fitness_all(&*q, index);
     let mut adjustments: [f64; 8] = [0.; 8];
     for i in 0..8 {
         adjustments[i] = qr.c[i] * 0.02;
@@ -764,7 +774,7 @@ unsafe fn jiggle_perspective(q: *mut Quirc, index: i32) {
                 new = old - step
             }
             qr.c[j] = new;
-            let test = fitness_all(q, index);
+            let test = fitness_all(&*q, index);
             if test > best {
                 best = test
             } else {
