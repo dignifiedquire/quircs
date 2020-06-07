@@ -494,18 +494,23 @@ fn test_capstone(
     record_capstone(image, regions, capstones, ring_left as Pixel, stone);
 }
 
-unsafe fn finder_scan(q: *mut Quirc, y: usize) {
+fn finder_scan(
+    image: &mut ImageMut<'_>,
+    regions: &mut Vec<Region>,
+    capstones: &mut Vec<Capstone>,
+    y: usize,
+) {
     static CHECK: [i32; 5] = [1, 1, 3, 1, 1];
 
-    let start = (y * (*q).w) as usize;
-    let row = &(*q).pixels[start..start + (*q).w];
+    let offset = y * image.width;
     let mut last_color = 0;
     let mut run_length = 0;
     let mut run_count = 0;
-    let mut pb: [i32; 5] = [0; 5];
+    let mut pb = [0; 5];
 
-    for (x, pixel) in row.iter().enumerate() {
-        let color = if *pixel as i32 != 0 { 1 } else { 0 };
+    for x in 0..image.width {
+        let pixel = image.pixels[offset + x];
+        let color = if pixel as i32 != 0 { 1 } else { 0 };
 
         if x != 0 && color != last_color {
             pb.copy_within(1.., 0);
@@ -524,7 +529,7 @@ unsafe fn finder_scan(q: *mut Quirc, y: usize) {
                 }
 
                 if ok != 0 {
-                    test_capstone(q, x as i32, y, &pb);
+                    test_capstone(image, regions, capstones, x as i32, y, &pb);
                 }
             }
         }
@@ -534,10 +539,14 @@ unsafe fn finder_scan(q: *mut Quirc, y: usize) {
     }
 }
 
-unsafe fn find_alignment_pattern(q: *mut Quirc, index: usize) {
-    let mut qr = &mut (*q).grids[index];
-    let c0 = &mut (*q).capstones[qr.caps[0]];
-    let c2 = &mut (*q).capstones[qr.caps[2]];
+fn find_alignment_pattern(
+    image: &mut ImageMut<'_>,
+    capstones: &[Capstone],
+    regions: &mut Vec<Region>,
+    qr: &mut Grid,
+) {
+    let c0 = &capstones[qr.caps[0]];
+    let c2 = &capstones[qr.caps[2]];
 
     let mut a = Point::default();
     let mut c = Point::default();
@@ -552,10 +561,10 @@ unsafe fn find_alignment_pattern(q: *mut Quirc, index: usize) {
     /* Guess another two corners of the alignment pattern so that we
      * can estimate its size.
      */
-    perspective_unmap(&(*c0).c, &mut b, &mut u, &mut v);
-    perspective_map(&(*c0).c, u, v + 1.0f64, &mut a);
-    perspective_unmap(&(*c2).c, &mut b, &mut u, &mut v);
-    perspective_map(&(*c2).c, u + 1.0f64, v, &mut c);
+    perspective_unmap(&c0.c, &mut b, &mut u, &mut v);
+    perspective_map(&c0.c, u, v + 1.0f64, &mut a);
+    perspective_unmap(&c2.c, &mut b, &mut u, &mut v);
+    perspective_map(&c2.c, u + 1.0f64, v, &mut c);
     let size_estimate = ((a.x - b.x) * -(c.y - b.y) + (a.y - b.y) * (c.x - b.x)).abs();
 
     /* Spiral outwards from the estimate point until we find something
@@ -565,12 +574,9 @@ unsafe fn find_alignment_pattern(q: *mut Quirc, index: usize) {
     static DX_MAP: [i32; 4] = [1, 0, -1, 0];
     static DY_MAP: [i32; 4] = [0, -1, 0, 1];
 
-    let mut image = ImageMut::from(&mut *q);
-    let regions = &mut (*q).regions;
-
     while step_size * step_size < size_estimate * 100 {
         for _ in 0..step_size {
-            let code = region_code(&mut image, regions, b.x, b.y as usize);
+            let code = region_code(image, regions, b.x, b.y as usize);
             if code >= 0 {
                 let reg = &regions[code as usize];
                 if reg.count >= size_estimate / 2 && reg.count <= size_estimate * 2 {
@@ -968,22 +974,26 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: usize, b: usize, mut c: usize) {
     /* Check the timing pattern. This doesn't require a perspective
      * transform.
      */
+    let mut image = ImageMut::from(&mut *q);
+    let capstones = &(*q).capstones;
+    let regions = &mut (*q).regions;
+
     if !(measure_timing_pattern(q, qr_index) < 0) {
         /* Make an estimate based for the alignment pattern based on extending
          * lines from capstones A and C.
          */
         if !(line_intersect(
-            &mut (*q).capstones[a as usize].corners[0],
-            &mut (*q).capstones[a as usize].corners[1],
-            &mut (*q).capstones[c as usize].corners[0],
-            &mut (*q).capstones[c as usize].corners[3],
+            &capstones[a as usize].corners[0],
+            &capstones[a as usize].corners[1],
+            &capstones[c as usize].corners[0],
+            &capstones[c as usize].corners[3],
             &mut qr.align,
         ) == 0)
         {
             /* On V2+ grids, we should use the alignment pattern. */
             if qr.grid_size > 21 {
                 /* Try to find the actual location of the alignment pattern. */
-                find_alignment_pattern(q, qr_index);
+                find_alignment_pattern(&mut image, capstones, regions, qr);
                 /* Find the point of the alignment pattern closest to the
                  * top-left of the QR grid.
                  */
@@ -1172,8 +1182,16 @@ impl Quirc {
         let threshold = otsu(self);
         pixels_setup(self, threshold);
 
+        let mut image = ImageMut {
+            pixels: &mut self.pixels,
+            width: self.w,
+            height: self.h,
+        };
+        let regions = &mut self.regions;
+        let capstones = &mut self.capstones;
+
         for i in 0..self.h {
-            unsafe { finder_scan(self, i) };
+            finder_scan(&mut image, regions, capstones, i);
         }
 
         for i in 0..self.num_capstones() {
