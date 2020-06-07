@@ -615,11 +615,11 @@ fn find_leftmost_to_line(user_data: &UserData<'_>, y: usize, left: i32, right: i
 
 /// Do a Bresenham scan from one point to another and count the number
 /// of black/white transitions.
-unsafe fn timing_scan(q: *const Quirc, p0: *const Point, p1: *const Point) -> i32 {
-    let mut n: i32 = (*p1).x - (*p0).x;
-    let mut d: i32 = (*p1).y - (*p0).y;
-    let mut x: i32 = (*p0).x;
-    let mut y: i32 = (*p0).y;
+fn timing_scan(image: &Image<'_>, p0: &Point, p1: &Point) -> i32 {
+    let mut n: i32 = p1.x - p0.x;
+    let mut d: i32 = p1.y - p0.y;
+    let mut x: i32 = p0.x;
+    let mut y: i32 = p0.y;
     let dom: *mut i32;
     let nondom: *mut i32;
     let dom_step: i32;
@@ -627,10 +627,10 @@ unsafe fn timing_scan(q: *const Quirc, p0: *const Point, p1: *const Point) -> i3
     let mut a: i32 = 0;
     let mut run_length: i32 = 0;
     let mut count: i32 = 0;
-    if (*p0).x < 0 || (*p0).y < 0 || (*p0).x >= (*q).w as i32 || (*p0).y >= (*q).h as i32 {
+    if p0.x < 0 || p0.y < 0 || p0.x >= image.width as i32 || p0.y >= image.height as i32 {
         return -1;
     }
-    if (*p1).x < 0 || (*p1).y < 0 || (*p1).x >= (*q).w as i32 || (*p1).y >= (*q).h as i32 {
+    if p1.x < 0 || p1.y < 0 || p1.x >= image.width as i32 || p1.y >= image.height as i32 {
         return -1;
     }
     if n.abs() > d.abs() {
@@ -655,14 +655,14 @@ unsafe fn timing_scan(q: *const Quirc, p0: *const Point, p1: *const Point) -> i3
     } else {
         dom_step = 1
     }
-    x = (*p0).x;
-    y = (*p0).y;
+    x = p0.x;
+    y = p0.y;
 
     for _ in 0..=d {
-        if y < 0 || y >= (*q).h as i32 || x < 0 || x >= (*q).w as i32 {
+        if y < 0 || y >= image.height as i32 || x < 0 || x >= image.width as i32 {
             break;
         }
-        let pixel = (*q).pixels[(y * (*q).w as i32 + x) as usize] as i32;
+        let pixel = image.pixels[(y * image.width as i32 + x) as usize] as i32;
         if pixel != 0 {
             if run_length >= 2 {
                 count += 1;
@@ -672,9 +672,9 @@ unsafe fn timing_scan(q: *const Quirc, p0: *const Point, p1: *const Point) -> i3
             run_length += 1;
         }
         a += n;
-        *dom += dom_step;
+        unsafe { *dom += dom_step };
         if a >= d {
-            *nondom += nondom_step;
+            unsafe { *nondom += nondom_step };
             a -= d
         }
     }
@@ -690,20 +690,18 @@ unsafe fn timing_scan(q: *const Quirc, p0: *const Point, p1: *const Point) -> i3
 /// For each capstone, we find a point in the middle of the ring band
 /// which is nearest the centre of the code. Using these points, we do
 /// a horizontal and a vertical timing scan.
-unsafe fn measure_timing_pattern(q: *mut Quirc, index: usize) -> i32 {
-    let mut qr = &mut (*q).grids[index];
-
+fn measure_timing_pattern(qr: &mut Grid, capstones: &[Capstone], image: &Image<'_>) -> i32 {
     static US: [f64; 3] = [6.5, 6.5, 0.5];
     static VS: [f64; 3] = [0.5, 6.5, 6.5];
 
     for (i, (us, vs)) in US.iter().zip(VS.iter()).enumerate() {
-        let cap = &mut (*q).capstones[qr.caps[i]];
+        let cap = &capstones[qr.caps[i]];
 
-        perspective_map(&(*cap).c, *us, *vs, &mut qr.tpep[i]);
+        perspective_map(&cap.c, *us, *vs, &mut qr.tpep[i]);
     }
 
-    qr.hscan = timing_scan(q, &mut qr.tpep[1], &mut qr.tpep[2]);
-    qr.vscan = timing_scan(q, &mut qr.tpep[1], &mut qr.tpep[0]);
+    qr.hscan = timing_scan(image, &qr.tpep[1], &qr.tpep[2]);
+    qr.vscan = timing_scan(image, &qr.tpep[1], &qr.tpep[0]);
 
     let mut scan = qr.hscan;
     if qr.vscan > scan {
@@ -748,6 +746,26 @@ struct Image<'a> {
     pixels: &'a [Pixel],
     width: usize,
     height: usize,
+}
+
+impl<'a> From<&'a Quirc> for Image<'a> {
+    fn from(q: &'a Quirc) -> Self {
+        Self {
+            pixels: &q.pixels,
+            width: q.w,
+            height: q.h,
+        }
+    }
+}
+
+impl<'a> From<&'a ImageMut<'a>> for Image<'a> {
+    fn from(img: &'a ImageMut<'a>) -> Self {
+        Self {
+            pixels: &img.pixels,
+            width: img.width,
+            height: img.height,
+        }
+    }
 }
 
 fn fitness_cell(qr: &Grid, image: &Image<'_>, x: i32, y: i32) -> i32 {
@@ -803,14 +821,7 @@ fn fitness_capstone(qr: &Grid, image: &Image<'_>, mut x: i32, mut y: i32) -> i32
 /// Compute a fitness score for the currently configured perspective
 /// transform, using the features we expect to find by scanning the
 /// grid.
-fn fitness_all(q: &Quirc, index: usize) -> i32 {
-    let qr = &q.grids[index];
-    let image = Image {
-        pixels: &q.pixels,
-        width: q.w,
-        height: q.h,
-    };
-
+fn fitness_all(qr: &Grid, image: &Image<'_>) -> i32 {
     let version = (qr.grid_size - 17) / 4;
     let info = &VERSION_DB[version as usize];
     let mut score: i32 = 0;
@@ -850,9 +861,8 @@ fn fitness_all(q: &Quirc, index: usize) -> i32 {
     score
 }
 
-unsafe fn jiggle_perspective(q: *mut Quirc, index: usize) {
-    let mut qr = &mut (*q).grids[index];
-    let mut best = fitness_all(&*q, index);
+fn jiggle_perspective(qr: &mut Grid, image: &Image<'_>) {
+    let mut best = fitness_all(&qr, &image);
     let mut adjustments: [f64; 8] = [0.; 8];
 
     for (a_val, c_val) in adjustments.iter_mut().zip(qr.c.iter()) {
@@ -866,7 +876,7 @@ unsafe fn jiggle_perspective(q: *mut Quirc, index: usize) {
             let step = adjustments[j];
             qr.c[j] = if i & 1 != 0 { old + step } else { old - step };
 
-            let test = fitness_all(&*q, index);
+            let test = fitness_all(&qr, &image);
             if test > best {
                 best = test
             } else {
@@ -883,15 +893,13 @@ unsafe fn jiggle_perspective(q: *mut Quirc, index: usize) {
 /// Once the capstones are in place and an alignment point has been
 /// chosen, we call this function to set up a grid-reading perspective
 /// transform.
-unsafe fn setup_qr_perspective(q: *mut Quirc, index: usize) {
-    let qr = &mut (*q).grids[index];
-
+fn setup_qr_perspective(qr: &mut Grid, capstones: &[Capstone], image: &Image<'_>) {
     /* Set up the perspective map for reading the grid */
     let rect = [
-        (*q).capstones[qr.caps[1]].corners[0],
-        (*q).capstones[qr.caps[2]].corners[0],
+        capstones[qr.caps[1]].corners[0],
+        capstones[qr.caps[2]].corners[0],
         qr.align,
-        (*q).capstones[qr.caps[0]].corners[0],
+        capstones[qr.caps[0]].corners[0],
     ];
 
     perspective_setup(
@@ -900,18 +908,19 @@ unsafe fn setup_qr_perspective(q: *mut Quirc, index: usize) {
         (qr.grid_size - 7) as f64,
         (qr.grid_size - 7) as f64,
     );
-    jiggle_perspective(q, index);
+
+    jiggle_perspective(qr, &image);
 }
 
 /// Rotate the capstone with so that corner 0 is the leftmost with respect
 /// to the given reference line.
-unsafe fn rotate_capstone(cap: *mut Capstone, h0: *const Point, hd: *const Point) {
+fn rotate_capstone(cap: &mut Capstone, h0: &Point, hd: &Point) {
     let mut copy: [Point; 4] = [Point::default(); 4];
     let mut best = 0;
     let mut best_score = 2147483647;
 
-    for (j, p) in (*cap).corners.iter().enumerate() {
-        let score = (p.x - (*h0).x) * -(*hd).y + (p.y - (*h0).y) * (*hd).x;
+    for (j, p) in cap.corners.iter().enumerate() {
+        let score = (p.x - h0.x) * -hd.y + (p.y - h0.y) * hd.x;
         if j == 0 || score < best_score {
             best = j;
             best_score = score
@@ -920,29 +929,36 @@ unsafe fn rotate_capstone(cap: *mut Capstone, h0: *const Point, hd: *const Point
 
     /* Rotate the capstone */
     for (i, copy) in copy.iter_mut().enumerate() {
-        *copy = (*cap).corners[(i + best) % 4];
+        *copy = cap.corners[(i + best) % 4];
     }
 
-    (*cap).corners = copy;
-    perspective_setup(&mut (*cap).c, &(*cap).corners, 7.0, 7.0);
+    cap.corners = copy;
+    perspective_setup(&mut cap.c, &cap.corners, 7.0, 7.0);
 }
 
-unsafe fn record_qr_grid(q: *mut Quirc, mut a: usize, b: usize, mut c: usize) {
-    if (*q).count() >= 8 {
+fn record_qr_grid(
+    image: &mut ImageMut<'_>,
+    regions: &mut Vec<Region>,
+    capstones: &mut [Capstone],
+    grids: &mut Vec<Grid>,
+    mut a: usize,
+    b: usize,
+    mut c: usize,
+) {
+    if grids.len() >= 8 {
         return;
     }
     /* Construct the hypotenuse line from A to C. B should be to
      * the left of this line.
      */
-    let mut h0 = (*q).capstones[a as usize].center;
+    let mut h0 = capstones[a].center;
     let mut hd = Point {
-        x: (*q).capstones[c].center.x - (*q).capstones[a].center.x,
-        y: (*q).capstones[c].center.y - (*q).capstones[a].center.y,
+        x: capstones[c].center.x - capstones[a].center.x,
+        y: capstones[c].center.y - capstones[a].center.y,
     };
 
     /* Make sure A-B-C is clockwise */
-    if ((*q).capstones[b].center.x - h0.x) * -hd.y + ((*q).capstones[b].center.y - h0.y) * hd.x > 0
-    {
+    if (capstones[b].center.x - h0.x) * -hd.y + (capstones[b].center.y - h0.y) * hd.x > 0 {
         let swap = a;
         a = c;
         c = swap;
@@ -950,23 +966,22 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: usize, b: usize, mut c: usize) {
         hd.y = -hd.y
     }
     /* Record the grid and its components */
-    let qr_index = (*q).count();
+    let qr_index = grids.len();
 
     let mut qr = Grid::default();
     qr.caps[0] = a;
     qr.caps[1] = b;
     qr.caps[2] = c;
     qr.align_region = None;
+    grids.push(qr);
 
-    (*q).grids.push(qr);
-
-    let qr = &mut (*q).grids[qr_index];
+    let qr = &mut grids[qr_index];
 
     /* Rotate each capstone so that corner 0 is top-left with respect
      * to the grid.
      */
     for cap_index in &qr.caps {
-        let mut cap = &mut (*q).capstones[*cap_index];
+        let mut cap = &mut capstones[*cap_index];
         rotate_capstone(cap, &mut h0, &mut hd);
         cap.qr_grid = qr_index as i32;
     }
@@ -974,11 +989,7 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: usize, b: usize, mut c: usize) {
     /* Check the timing pattern. This doesn't require a perspective
      * transform.
      */
-    let mut image = ImageMut::from(&mut *q);
-    let capstones = &(*q).capstones;
-    let regions = &mut (*q).regions;
-
-    if !(measure_timing_pattern(q, qr_index) < 0) {
+    if !(measure_timing_pattern(qr, capstones, &Image::from(&*image)) < 0) {
         /* Make an estimate based for the alignment pattern based on extending
          * lines from capstones A and C.
          */
@@ -993,12 +1004,12 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: usize, b: usize, mut c: usize) {
             /* On V2+ grids, we should use the alignment pattern. */
             if qr.grid_size > 21 {
                 /* Try to find the actual location of the alignment pattern. */
-                find_alignment_pattern(&mut image, capstones, regions, qr);
+                find_alignment_pattern(image, capstones, regions, qr);
                 /* Find the point of the alignment pattern closest to the
                  * top-left of the QR grid.
                  */
                 if let Some(align_region) = qr.align_region {
-                    let reg = &(*q).regions[align_region as usize];
+                    let reg = &regions[align_region as usize];
 
                     /* Start from some point inside the alignment pattern */
                     qr.align = reg.seed;
@@ -1015,10 +1026,9 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: usize, b: usize, mut c: usize) {
                         corners: &mut corners,
                     };
                     psd.scores[0] = -hd.y * qr.align.x + hd.x * qr.align.y;
-                    let mut image = ImageMut::from(&mut *q);
 
                     flood_fill_seed::<fn(&UserData<'_>, usize, i32, i32) -> ()>(
-                        &mut image,
+                        image,
                         reg.seed.x,
                         reg.seed.y as usize,
                         align_region,
@@ -1028,7 +1038,7 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: usize, b: usize, mut c: usize) {
                         0,
                     );
                     flood_fill_seed(
-                        &mut image,
+                        image,
                         reg.seed.x,
                         reg.seed.y as usize,
                         1,
@@ -1040,7 +1050,8 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: usize, b: usize, mut c: usize) {
                     qr.align = corners[0];
                 }
             }
-            setup_qr_perspective(q, qr_index);
+
+            setup_qr_perspective(qr, capstones, &Image::from(&*image));
             return;
         }
     }
@@ -1049,13 +1060,21 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: usize, b: usize, mut c: usize) {
      * recorded and pretend it never happened.
      */
     for cap_index in &qr.caps {
-        (*q).capstones[*cap_index].qr_grid = -1;
+        capstones[*cap_index].qr_grid = -1;
     }
 
-    (*q).grids.pop();
+    grids.pop();
 }
 
-unsafe fn test_neighbours(q: *mut Quirc, i: usize, hlist: &NeighbourList, vlist: &NeighbourList) {
+fn test_neighbours(
+    image: &mut ImageMut<'_>,
+    regions: &mut Vec<Region>,
+    capstones: &mut [Capstone],
+    grids: &mut Vec<Grid>,
+    i: usize,
+    hlist: &NeighbourList,
+    vlist: &NeighbourList,
+) {
     let mut best_score = 0.0;
     let mut best_h = -1;
     let mut best_v = -1;
@@ -1081,11 +1100,24 @@ unsafe fn test_neighbours(q: *mut Quirc, i: usize, hlist: &NeighbourList, vlist:
         return;
     }
 
-    record_qr_grid(q, best_h as usize, i, best_v as usize);
+    record_qr_grid(
+        image,
+        regions,
+        capstones,
+        grids,
+        best_h as usize,
+        i,
+        best_v as usize,
+    );
 }
 
-unsafe fn test_grouping(q: *mut Quirc, i: usize) {
-    let c1 = &mut (*q).capstones[i];
+fn test_grouping(
+    image: &mut ImageMut<'_>,
+    regions: &mut Vec<Region>,
+    capstones: &mut [Capstone],
+    grids: &mut Vec<Grid>,
+    i: usize,
+) {
     let mut hlist = NeighbourList {
         n: [Neighbour {
             index: 0,
@@ -1100,15 +1132,19 @@ unsafe fn test_grouping(q: *mut Quirc, i: usize) {
         }; 32],
         count: 0,
     };
-    if c1.qr_grid >= 0 {
+
+    if capstones[i].qr_grid >= 0 {
         return;
     }
+
     hlist.count = 0;
     vlist.count = 0;
+
     /* Look for potential neighbours by examining the relative gradients
      * from this capstone to others.
      */
-    for (j, c2) in (*q).capstones.iter_mut().enumerate() {
+    let c1c = capstones[i].c;
+    for (j, c2) in capstones.iter_mut().enumerate() {
         let mut u = 0.;
         let mut v = 0.;
 
@@ -1116,7 +1152,7 @@ unsafe fn test_grouping(q: *mut Quirc, i: usize) {
             continue;
         }
 
-        perspective_unmap(&(*c1).c, &mut c2.center, &mut u, &mut v);
+        perspective_unmap(&c1c, &mut c2.center, &mut u, &mut v);
         u = (u - 3.5).abs();
         v = (v - 3.5).abs();
 
@@ -1141,7 +1177,7 @@ unsafe fn test_grouping(q: *mut Quirc, i: usize) {
         return;
     }
 
-    test_neighbours(q, i, &mut hlist, &mut vlist);
+    test_neighbours(image, regions, capstones, grids, i, &mut hlist, &mut vlist);
 }
 
 fn pixels_setup(q: &mut Quirc, threshold: u8) {
@@ -1194,8 +1230,9 @@ impl Quirc {
             finder_scan(&mut image, regions, capstones, i);
         }
 
-        for i in 0..self.num_capstones() {
-            unsafe { test_grouping(self, i) };
+        let grids = &mut self.grids;
+        for i in 0..capstones.len() {
+            test_grouping(&mut image, regions, capstones, grids, i);
         }
     }
 
