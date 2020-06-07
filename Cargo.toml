@@ -11,7 +11,7 @@ readme = "README.md"
 edition = "2018"
 
 keywords = ["qr", "scanner"]
-categories = ["encodings", "images"]
+categories = ["encoding", "multimedia"]
 
 [lib]
 crate-type = ["staticlib", "rlib"]
