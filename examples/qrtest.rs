@@ -11,11 +11,13 @@ struct ResultInfo {
     total_time: u128,
 }
 
-static mut WANT_VERBOSE: bool = true;
-static mut WANT_CELL_DUMP: bool = false;
-static mut DECODER: *mut Quirc = 0 as *const Quirc as *mut Quirc;
+#[derive(Default)]
+struct Opts {
+    verbose: bool,
+    cell_dump: bool,
+}
 
-unsafe fn print_result(name: &str, info: *mut ResultInfo) {
+fn print_result(name: &str, info: &mut ResultInfo) {
     print!("-------------------------------------------------------------------------------");
     print!(
         "{}: {} files, {} codes, {} decoded ({} failures)",
@@ -50,7 +52,7 @@ unsafe fn print_result(name: &str, info: *mut ResultInfo) {
     }
 }
 
-unsafe fn add_result(mut sum: *mut ResultInfo, inf: *mut ResultInfo) {
+fn add_result(mut sum: &mut ResultInfo, inf: &mut ResultInfo) {
     (*sum).file_count += (*inf).file_count;
     (*sum).id_count += (*inf).id_count;
     (*sum).decode_count += (*inf).decode_count;
@@ -59,29 +61,33 @@ unsafe fn add_result(mut sum: *mut ResultInfo, inf: *mut ResultInfo) {
     (*sum).total_time = (*sum).total_time.wrapping_add((*inf).total_time);
 }
 
-fn load_jpeg(_dec: *mut Quirc, _path: &PathBuf) -> i32 {
+fn load_jpeg(_dec: &mut Quirc, _path: &PathBuf) -> i32 {
     todo!()
 }
 
-unsafe fn load_png(dec: *mut Quirc, path: &PathBuf) -> i32 {
+fn load_png(dec: &mut Quirc, path: &PathBuf) -> i32 {
     let img = image::open(&path)
         .expect("failed to open image")
         .into_luma();
     let width = img.width() as usize;
     let height = img.height() as usize;
 
-    assert!(quirc_resize(dec, width, height) > -1);
+    unsafe {
+        assert!(quirc_resize(dec, width, height) > -1);
+    }
 
-    let image_ptr = quirc_begin(dec, &mut 0, &mut 0);
+    let image_ptr = unsafe { quirc_begin(dec, &mut 0, &mut 0) };
     // copy image to the ptr
     for (x, y, px) in img.enumerate_pixels() {
-        *image_ptr.add(y as usize * width as usize + x as usize) = px[0];
+        unsafe {
+            *image_ptr.add(y as usize * width as usize + x as usize) = px[0];
+        }
     }
 
     0
 }
 
-unsafe fn scan_file(path: &str, mut info: *mut ResultInfo) -> i32 {
+fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut ResultInfo) -> i32 {
     let path = std::path::PathBuf::from(path);
 
     use std::time::Instant;
@@ -90,9 +96,9 @@ unsafe fn scan_file(path: &str, mut info: *mut ResultInfo) -> i32 {
     let total_start = start;
 
     let ret = if path.extension().unwrap() == "jpg" || path.extension().unwrap() == "jpeg" {
-        load_jpeg(DECODER, &path)
+        load_jpeg(decoder, &path)
     } else if path.extension().unwrap() == "png" {
-        load_png(DECODER, &path)
+        load_png(decoder, &path)
     } else {
         panic!("unsupported extension: {:?}", path.extension());
     };
@@ -104,9 +110,9 @@ unsafe fn scan_file(path: &str, mut info: *mut ResultInfo) -> i32 {
     }
 
     let start = Instant::now();
-    quirc_end(DECODER);
+    unsafe { quirc_end(decoder) };
     (*info).identify_time = start.elapsed().as_millis();
-    (*info).id_count = (*DECODER).count();
+    (*info).id_count = decoder.count();
 
     for i in 0..(*info).id_count as usize {
         let mut code: Code = Code {
@@ -115,7 +121,7 @@ unsafe fn scan_file(path: &str, mut info: *mut ResultInfo) -> i32 {
             cell_bitmap: [0; 3917],
         };
         let mut data = Data::default();
-        quirc_extract(DECODER, i, &mut code);
+        unsafe { quirc_extract(decoder, i, &mut code) };
         if quirc_decode(&mut code, &mut data) as u64 == 0 {
             (*info).decode_count += 1
         }
@@ -133,20 +139,22 @@ unsafe fn scan_file(path: &str, mut info: *mut ResultInfo) -> i32 {
         (*info).decode_count,
     );
 
-    if WANT_CELL_DUMP || WANT_VERBOSE {
+    if opts.cell_dump || opts.verbose {
         for i in 0..(*info).id_count {
             let mut code_0 = Code {
                 corners: [Point { x: 0, y: 0 }; 4],
                 size: 0,
                 cell_bitmap: [0; 3917],
             };
-            quirc_extract(DECODER, i, &mut code_0);
-            if WANT_CELL_DUMP {
+            unsafe {
+                quirc_extract(decoder, i, &mut code_0);
+            }
+            if opts.cell_dump {
                 dump_cells(&mut code_0);
                 println!();
             }
 
-            if WANT_VERBOSE {
+            if opts.verbose {
                 let mut data_0 = Data::default();
                 let err = quirc_decode(&mut code_0, &mut data_0);
                 if err as u64 != 0 {
@@ -164,11 +172,11 @@ unsafe fn scan_file(path: &str, mut info: *mut ResultInfo) -> i32 {
     return 1;
 }
 
-unsafe fn test_scan(path: &str, info: *mut ResultInfo) -> i32 {
-    scan_file(path, info)
+fn test_scan(decoder: &mut Quirc, opts: &Opts, path: &str, info: &mut ResultInfo) -> i32 {
+    scan_file(decoder, opts, path, info)
 }
 
-unsafe fn run_tests(paths: &[String]) -> i32 {
+fn run_tests(opts: &Opts, paths: &[String]) -> i32 {
     let mut sum = ResultInfo {
         file_count: 0,
         id_count: 0,
@@ -178,8 +186,8 @@ unsafe fn run_tests(paths: &[String]) -> i32 {
         total_time: 0,
     };
     let mut count: i32 = 0;
-    DECODER = quirc_new();
-    assert!(!DECODER.is_null(), "quirc_new");
+    let decoder = unsafe { quirc_new() };
+    assert!(!decoder.is_null(), "quirc_new");
 
     println!("  {:30}  {:^17} {:^11}", "", "Time (ms)", "Count");
     println!(
@@ -197,7 +205,7 @@ unsafe fn run_tests(paths: &[String]) -> i32 {
             identify_time: 0,
             total_time: 0,
         };
-        if test_scan(path, &mut info) > 0 {
+        if test_scan(unsafe { &mut *decoder }, opts, path, &mut info) > 0 {
             add_result(&mut sum, &mut info);
             count += 1
         }
@@ -205,17 +213,13 @@ unsafe fn run_tests(paths: &[String]) -> i32 {
     if count > 1 {
         print_result("TOTAL", &mut sum);
     }
-    quirc_destroy(DECODER);
-    return 0;
-}
-unsafe fn main_0(args: Vec<String>) -> i32 {
-    println!("quirc test program");
-    println!("Library version: {}\n", quirc_version());
-
-    run_tests(&args)
+    unsafe {
+        quirc_destroy(decoder);
+    }
+    0
 }
 
-unsafe fn dump_data(data: *const Data) {
+fn dump_data(data: &Data) {
     let data = *data;
 
     println!("    Version: {}", data.version);
@@ -230,7 +234,7 @@ unsafe fn dump_data(data: *const Data) {
     println!("    ECI: {:?}", data.eci);
 }
 
-unsafe fn dump_cells(code: *const Code) {
+fn dump_cells(code: &Code) {
     let code = *code;
 
     print!("    {} cells, corners:", code.size);
@@ -256,5 +260,15 @@ unsafe fn dump_cells(code: *const Code) {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    unsafe { std::process::exit(main_0(args) as i32) }
+
+    println!("quirc test program");
+    println!("Library version: {}\n", quirc_version());
+
+    let opts = Opts {
+        verbose: true,
+        cell_dump: false,
+    };
+
+    let res = run_tests(&opts, &args);
+    std::process::exit(res);
 }
