@@ -191,10 +191,11 @@ fn flood_fill_seed<F>(
 
     if y > 0 {
         // Not the first row, so fill the previous row
-
         let offset = (y - 1) * width;
         for i in left..=right {
-            let val = image.pixels[offset + i];
+            // Safety: pixels is in range, as verified by the assert at the beginning.
+            // Unfortunately this is required, as the compiler will add bounds checks that are quite measurable.
+            let val = unsafe { *image.pixels.get_unchecked(offset + i) };
             if val == from {
                 flood_fill_seed(image, i as i32, y - 1, from, to, func, user_data, depth + 1);
             }
@@ -203,10 +204,11 @@ fn flood_fill_seed<F>(
 
     if y < image.height - 1 {
         // Not the last row, so fill the next row
-
         let offset = (y + 1) * width;
         for i in left..=right {
-            let val = image.pixels[offset + i];
+            // Safety: pixels is in range, as verified by the assert at the beginning.
+            // Unfortunately this is required, as the compiler will add bounds checks that are quite measurable.
+            let val = unsafe { *image.pixels.get_unchecked(offset + i) };
             if val == from {
                 flood_fill_seed(image, i as i32, y + 1, from, to, func, user_data, depth + 1);
             }
@@ -489,9 +491,13 @@ fn finder_scan(
     let mut run_count = 0;
     let mut pb = [0; 5];
 
+    assert!(image.pixels.len() >= offset + image.width);
+
     for x in 0..image.width {
-        let pixel = image.pixels[offset + x];
-        let color = if pixel as i32 != 0 { 1 } else { 0 };
+        // Safety: pixels is in range, as verified by the assert at the beginning.
+        // Unfortunately this is required, as the compiler will add bounds checks that are quite measurable.
+        let pixel = unsafe { image.pixels.get_unchecked(offset + x) };
+        let color = if *pixel as i32 != 0 { 1 } else { 0 };
 
         if x != 0 && color != last_color {
             pb.copy_within(1.., 0);
