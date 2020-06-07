@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::rc::Rc;
 
 use crate::quirc::*;
 use crate::version_db::*;
@@ -114,11 +113,19 @@ fn perspective_unmap(c: &[f64; 8], in_0: &Point, u: &mut f64, v: &mut f64) {
 
 const FLOOD_FILL_MAX_DEPTH: usize = 4096;
 
-#[derive(Clone)]
 enum UserData<'a> {
-    Region(Rc<RefCell<&'a mut Region>>),
-    Polygon(Rc<RefCell<&'a mut PolygonScoreData<'a>>>),
+    Region(RefCell<&'a mut Region>),
+    Polygon(RefCell<&'a mut PolygonScoreData<'a>>),
     None,
+}
+
+impl<'a> UserData<'a> {
+    fn into_polygon(self) -> &'a mut PolygonScoreData<'a> {
+        match self {
+            UserData::Polygon(poly) => poly.into_inner(),
+            _ => panic!("invalid user data"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -146,10 +153,10 @@ fn flood_fill_seed<F>(
     from: Pixel,
     to: Pixel,
     func: Option<&F>,
-    user_data: UserData<'_>,
+    user_data: &UserData<'_>,
     depth: usize,
 ) where
-    F: Fn(UserData<'_>, usize, i32, i32),
+    F: Fn(&UserData<'_>, usize, i32, i32),
 {
     if depth >= FLOOD_FILL_MAX_DEPTH {
         return;
@@ -177,7 +184,7 @@ fn flood_fill_seed<F>(
     }
 
     if let Some(func) = func {
-        func(user_data.clone(), y, left as i32, right as i32);
+        func(user_data, y, left as i32, right as i32);
     }
 
     // Seed new flood-fills
@@ -275,7 +282,7 @@ unsafe fn otsu(q: *const Quirc) -> u8 {
     threshold
 }
 
-fn area_count(user_data: UserData<'_>, _y: usize, left: i32, right: i32) {
+fn area_count(user_data: &UserData<'_>, _y: usize, left: i32, right: i32) {
     if let UserData::Region(ref region) = user_data {
         region.borrow_mut().count += right - left + 1;
     } else {
@@ -313,14 +320,14 @@ unsafe fn region_code(q: *mut Quirc, x: i32, y: usize) -> i32 {
         pixel,
         region as Pixel,
         Some(&area_count),
-        UserData::Region(Rc::new(RefCell::new(&mut (*q).regions[region as usize]))),
+        &UserData::Region(RefCell::new(&mut (*q).regions[region as usize])),
         0,
     );
 
     region
 }
 
-fn find_one_corner(user_data: UserData<'_>, y: usize, left: i32, right: i32) {
+fn find_one_corner(user_data: &UserData<'_>, y: usize, left: i32, right: i32) {
     if let UserData::Polygon(ref psd) = user_data {
         let mut psd = psd.borrow_mut();
         let xs: [i32; 2] = [left, right];
@@ -340,7 +347,7 @@ fn find_one_corner(user_data: UserData<'_>, y: usize, left: i32, right: i32) {
     }
 }
 
-fn find_other_corners(user_data: UserData<'_>, y: usize, left: i32, right: i32) {
+fn find_other_corners(user_data: &UserData<'_>, y: usize, left: i32, right: i32) {
     if let UserData::Polygon(ref psd) = user_data {
         let mut psd = psd.borrow_mut();
         let xs: [i32; 2] = [left, right];
@@ -375,8 +382,8 @@ unsafe fn find_region_corners(
         scores: [-1, 0, 0, 0],
         corners,
     };
-    let psd_ref = Rc::new(RefCell::new(&mut psd));
     let mut image = ImageMut::from(&mut *q);
+    let psd_ref = UserData::Polygon(RefCell::new(&mut psd));
 
     flood_fill_seed(
         &mut image,
@@ -385,15 +392,13 @@ unsafe fn find_region_corners(
         rcode,
         1,
         Some(&find_one_corner),
-        UserData::Polygon(psd_ref.clone()),
+        &psd_ref,
         0,
     );
+    let mut psd = psd_ref.into_polygon();
+
     // Safe to unwrap, because the only reference was given to the call
     // to flood_fill_seed above.
-    let mut psd = Rc::try_unwrap(psd_ref)
-        .map_err(|_| ())
-        .unwrap()
-        .into_inner();
     psd.ref_0.x = psd.corners[0].x - psd.ref_0.x;
     psd.ref_0.y = psd.corners[0].y - psd.ref_0.y;
     for corner in &mut psd.corners[..] {
@@ -415,7 +420,7 @@ unsafe fn find_region_corners(
         1,
         rcode,
         Some(&find_other_corners),
-        UserData::Polygon(Rc::new(RefCell::new(&mut psd))),
+        &UserData::Polygon(RefCell::new(&mut psd)),
         0,
     );
 }
@@ -568,7 +573,7 @@ unsafe fn find_alignment_pattern(q: *mut Quirc, index: usize) {
     }
 }
 
-fn find_leftmost_to_line(user_data: UserData<'_>, y: usize, left: i32, right: i32) {
+fn find_leftmost_to_line(user_data: &UserData<'_>, y: usize, left: i32, right: i32) {
     if let UserData::Polygon(ref psd) = user_data {
         let mut psd = psd.borrow_mut();
         let xs: [i32; 2] = [left, right];
@@ -986,14 +991,14 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: usize, b: usize, mut c: usize) {
                     psd.scores[0] = -hd.y * qr.align.x + hd.x * qr.align.y;
                     let mut image = ImageMut::from(&mut *q);
 
-                    flood_fill_seed::<fn(UserData<'_>, usize, i32, i32) -> ()>(
+                    flood_fill_seed::<fn(&UserData<'_>, usize, i32, i32) -> ()>(
                         &mut image,
                         reg.seed.x,
                         reg.seed.y as usize,
                         align_region,
                         1,
                         None,
-                        UserData::None,
+                        &UserData::None,
                         0,
                     );
                     flood_fill_seed(
@@ -1003,7 +1008,7 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: usize, b: usize, mut c: usize) {
                         1,
                         align_region,
                         Some(&find_leftmost_to_line),
-                        UserData::Polygon(Rc::new(RefCell::new(&mut psd))),
+                        &UserData::Polygon(RefCell::new(&mut psd)),
                         0,
                     );
                     qr.align = corners[0];
