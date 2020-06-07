@@ -234,12 +234,12 @@ fn flood_fill_seed<F>(
 
 // --- Adaptive thresholding
 
-unsafe fn otsu(q: *const Quirc) -> u8 {
-    let num_pixels = (*q).w * (*q).h;
+fn otsu(q: &Quirc) -> u8 {
+    let num_pixels = q.w * q.h;
 
     // Calculate histogram
     let mut histogram: [u32; 256] = [0; 256];
-    let image = &(*q).image;
+    let image = &q.image;
 
     for value in image {
         let value = *value as usize;
@@ -290,37 +290,37 @@ fn area_count(user_data: &UserData<'_>, _y: usize, left: i32, right: i32) {
     }
 }
 
-unsafe fn region_code(q: *mut Quirc, x: i32, y: usize) -> i32 {
-    if x < 0 || x >= (*q).w as i32 || y >= (*q).h {
+fn region_code(image: &mut ImageMut<'_>, regions: &mut Vec<Region>, x: i32, y: usize) -> i32 {
+    if x < 0 || x >= image.width as i32 || y >= image.height {
         return -1;
     }
-    let pixel = (*q).pixels[(y as i32 * (*q).w as i32 + x) as usize];
+    let pixel = image.pixels[(y as i32 * image.width as i32 + x) as usize];
     if pixel >= 2 {
         return pixel as i32;
     }
     if pixel == 0 {
         return -1;
     }
-    let region = (*q).num_regions() as i32;
+    let region = regions.len() as i32;
 
     if region >= 65_534 {
         return -1;
     }
 
-    (*q).regions.push(Region {
+    regions.push(Region {
         seed: Point { x, y: y as i32 },
         count: 0,
         capstone: -1,
     });
 
     flood_fill_seed(
-        &mut ImageMut::from(&mut *q),
+        image,
         x,
         y,
         pixel,
         region as Pixel,
         Some(&area_count),
-        &UserData::Region(RefCell::new(&mut (*q).regions[region as usize])),
+        &UserData::Region(RefCell::new(&mut regions[region as usize])),
         0,
     );
 
@@ -370,23 +370,22 @@ fn find_other_corners(user_data: &UserData<'_>, y: usize, left: i32, right: i32)
     }
 }
 
-unsafe fn find_region_corners(
-    q: *mut Quirc,
+fn find_region_corners(
+    image: &mut ImageMut<'_>,
+    region: &Region,
     rcode: Pixel,
     point: &Point,
     corners: &mut [Point; 4],
 ) {
-    let region = (*q).regions[rcode as usize];
     let mut psd = PolygonScoreData {
         ref_0: *point,
         scores: [-1, 0, 0, 0],
         corners,
     };
-    let mut image = ImageMut::from(&mut *q);
     let psd_ref = UserData::Polygon(RefCell::new(&mut psd));
 
     flood_fill_seed(
-        &mut image,
+        image,
         region.seed.x,
         region.seed.y as usize,
         rcode,
@@ -414,7 +413,7 @@ unsafe fn find_region_corners(
     psd.scores[3] = -i;
 
     flood_fill_seed(
-        &mut image,
+        image,
         region.seed.x,
         region.seed.y as usize,
         1,
@@ -425,26 +424,32 @@ unsafe fn find_region_corners(
     );
 }
 
-unsafe fn record_capstone(q: *mut Quirc, ring: Pixel, stone: i32) {
-    let stone_reg = &mut (*q).regions[stone as usize];
-    let ring_reg = &mut (*q).regions[ring as usize];
-    if (*q).num_capstones() >= 32 {
+fn record_capstone(
+    image: &mut ImageMut<'_>,
+    regions: &mut [Region],
+    capstones: &mut Vec<Capstone>,
+    ring: Pixel,
+    stone: i32,
+) {
+    if capstones.len() >= 32 {
         return;
     }
-    let cs_index = (*q).num_capstones() as i32;
+    let cs_index = capstones.len() as i32;
 
     let mut capstone = Capstone::default();
     capstone.qr_grid = -1;
     capstone.ring = ring as i32;
     capstone.stone = stone;
-    (*q).capstones.push(capstone);
-    let capstone = &mut (*q).capstones[cs_index as usize];
+    capstones.push(capstone);
+    let capstone = &mut capstones[cs_index as usize];
 
-    stone_reg.capstone = cs_index;
-    ring_reg.capstone = cs_index;
+    regions[stone as usize].capstone = cs_index;
+    regions[ring as usize].capstone = cs_index;
 
     /* Find the corners of the ring */
-    find_region_corners(q, ring, &(*stone_reg).seed, &mut capstone.corners);
+    let region = &regions[ring as usize];
+    let seed = &regions[stone as usize].seed;
+    find_region_corners(image, region, ring, seed, &mut capstone.corners);
 
     /* Set up the perspective transform and find the center */
     perspective_setup(&mut capstone.c, &capstone.corners, 7.0, 7.0);
@@ -452,9 +457,17 @@ unsafe fn record_capstone(q: *mut Quirc, ring: Pixel, stone: i32) {
 }
 
 unsafe fn test_capstone(q: *mut Quirc, x: i32, y: usize, pb: &[i32]) {
-    let ring_right = region_code(q, x - pb[4], y);
-    let stone = region_code(q, x - pb[4] - pb[3] - pb[2], y);
-    let ring_left = region_code(q, x - pb[4] - pb[3] - pb[2] - pb[1] - pb[0], y);
+    let mut image = ImageMut::from(&mut *q);
+    let regions = &mut (*q).regions;
+
+    let ring_right = region_code(&mut image, regions, x - pb[4], y);
+    let stone = region_code(&mut image, regions, x - pb[4] - pb[3] - pb[2], y);
+    let ring_left = region_code(
+        &mut image,
+        regions,
+        x - pb[4] - pb[3] - pb[2] - pb[1] - pb[0],
+        y,
+    );
     if ring_left < 0 || ring_right < 0 || stone < 0 {
         return;
     }
@@ -478,7 +491,11 @@ unsafe fn test_capstone(q: *mut Quirc, x: i32, y: usize, pb: &[i32]) {
     if ratio < 10 || ratio > 70 {
         return;
     }
-    record_capstone(q, ring_left as Pixel, stone);
+
+    let mut image = ImageMut::from(&mut *q);
+    let capstones = &mut (*q).capstones;
+
+    record_capstone(&mut image, regions, capstones, ring_left as Pixel, stone);
 }
 
 unsafe fn finder_scan(q: *mut Quirc, y: usize) {
@@ -552,11 +569,14 @@ unsafe fn find_alignment_pattern(q: *mut Quirc, index: usize) {
     static DX_MAP: [i32; 4] = [1, 0, -1, 0];
     static DY_MAP: [i32; 4] = [0, -1, 0, 1];
 
+    let mut image = ImageMut::from(&mut *q);
+    let regions = &mut (*q).regions;
+
     while step_size * step_size < size_estimate * 100 {
         for _ in 0..step_size {
-            let code = region_code(q, b.x, b.y as usize);
+            let code = region_code(&mut image, regions, b.x, b.y as usize);
             if code >= 0 {
-                let reg = &mut (*q).regions[code as usize];
+                let reg = &regions[code as usize];
                 if reg.count >= size_estimate / 2 && reg.count <= size_estimate * 2 {
                     qr.align_region = Some(code as Pixel);
                     return;
@@ -1153,7 +1173,7 @@ impl Quirc {
     /// the image for QR-code recognition. The locations and content of each
     /// code may be obtained using accessor functions described below.
     pub fn end(&mut self) {
-        let threshold = unsafe { otsu(self) };
+        let threshold = otsu(self);
         pixels_setup(self, threshold);
 
         for i in 0..self.h {
