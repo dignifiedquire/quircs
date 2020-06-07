@@ -15,7 +15,7 @@ struct Neighbour {
 #[repr(C)]
 struct NeighbourList {
     pub n: [Neighbour; 32],
-    pub count: i32,
+    pub count: usize,
 }
 
 struct PolygonScoreData<'a> {
@@ -133,43 +133,65 @@ unsafe fn flood_fill_seed<F>(
 ) where
     F: Fn(UserData<'_>, i32, i32, i32),
 {
-    let mut left = x;
-    let mut right = x;
+    if depth >= FLOOD_FILL_MAX_DEPTH {
+        return;
+    }
+
+    let mut left = x as usize;
+    let mut right = x as usize;
 
     let width = (*q).w;
     let to_range = |start| start..start + width;
 
-    let mut row: &mut [Pixel] = &mut (*q).pixels[to_range((y * (*q).w as i32) as usize)];
-    if depth >= FLOOD_FILL_MAX_DEPTH {
-        return;
+    let mut row = &mut (*q).pixels[to_range((y as usize) * (*q).w)];
+    while left > 0 && row[left - 1] as i32 == from {
+        left -= 1;
     }
-    while left > 0 && row[(left - 1) as usize] as i32 == from {
-        left -= 1
+    while right < (*q).w - 1 && row[right + 1] as i32 == from {
+        right += 1;
     }
-    while right < (*q).w as i32 - 1 && row[(right + 1) as usize] as i32 == from {
-        right += 1
-    }
+
     /* Fill the extent */
-    for i in left..=right {
-        row[i as usize] = to as Pixel;
+    for val in &mut row[left..=right] {
+        *val = to as Pixel;
     }
     if func.is_some() {
-        func.expect("non-null function pointer")(user_data.clone(), y, left, right);
+        func.expect("non-null function pointer")(user_data.clone(), y, left as i32, right as i32);
     }
+
     /* Seed new flood-fills */
     if y > 0 {
         row = &mut (*q).pixels[to_range(((y - 1) * (*q).w as i32) as usize)];
-        for i in left..=right {
-            if row[i as usize] as i32 == from {
-                flood_fill_seed(q, i, y - 1, from, to, func, user_data.clone(), depth + 1);
+        for (i, val) in row.iter_mut().enumerate().skip(left).take(right - left + 1) {
+            if *val as i32 == from {
+                flood_fill_seed(
+                    q,
+                    i as i32,
+                    y - 1,
+                    from,
+                    to,
+                    func,
+                    user_data.clone(),
+                    depth + 1,
+                );
             }
         }
     }
+
     if y < (*q).h as i32 - 1 {
         row = &mut (*q).pixels[to_range(((y + 1) * (*q).w as i32) as usize)];
-        for i in left..=right {
-            if row[i as usize] as i32 == from {
-                flood_fill_seed(q, i, y + 1, from, to, func, user_data.clone(), depth + 1);
+        for (i, val) in row.iter_mut().enumerate().skip(left).take(right - left + 1) {
+            if *val as i32 == from {
+                flood_fill_seed(
+                    q,
+                    i as i32,
+                    y + 1,
+                    from,
+                    to,
+                    func,
+                    user_data.clone(),
+                    depth + 1,
+                );
             }
         }
     }
@@ -184,15 +206,15 @@ unsafe fn otsu(q: *const Quirc) -> u8 {
     let mut histogram: [u32; 256] = [0; 256];
     let image = &(*q).image;
 
-    for i in 0..num_pixels {
-        let value = image[i] as usize;
+    for value in image {
+        let value = *value as usize;
         histogram[value] = histogram[value].wrapping_add(1);
     }
 
     // Calculate weighted sum of histogram values
     let mut sum: u32 = 0;
-    for i in 0..=255u32 {
-        sum = sum.wrapping_add(i.wrapping_mul(histogram[i as usize]));
+    for (i, val) in histogram.iter().enumerate() {
+        sum = sum.wrapping_add((i as u32).wrapping_mul(*val));
     }
 
     // Compute threshold
@@ -200,25 +222,25 @@ unsafe fn otsu(q: *const Quirc) -> u8 {
     let mut q1: i32 = 0;
     let mut max: f64 = 0 as f64;
     let mut threshold: u8 = 0 as u8;
-    for i in 0..=255u32 {
+    for (i, val) in histogram.iter().enumerate() {
         // Weighted background
-        q1 = (q1 as u32).wrapping_add(histogram[i as usize]) as i32 as i32;
-        if !(q1 == 0) {
-            // Weighted foreground
-            let q2 = num_pixels as i32 - q1;
-            if q2 == 0 {
-                break;
-            }
-            sum_b =
-                (sum_b as u32).wrapping_add(i.wrapping_mul(histogram[i as usize])) as i32 as i32;
-            let m1: f64 = sum_b as f64 / q1 as f64;
-            let m2: f64 = (sum as f64 - sum_b as f64) / q2 as f64;
-            let m1m2: f64 = m1 - m2;
-            let variance: f64 = m1m2 * m1m2 * q1 as f64 * q2 as f64;
-            if variance >= max {
-                threshold = i as u8;
-                max = variance
-            }
+        q1 = (q1 as u32).wrapping_add(*val) as i32 as i32;
+        if q1 == 0 {
+            continue;
+        }
+        // Weighted foreground
+        let q2 = num_pixels as i32 - q1;
+        if q2 == 0 {
+            break;
+        }
+        sum_b = (sum_b as u32).wrapping_add((i as u32).wrapping_mul(*val)) as i32 as i32;
+        let m1 = sum_b as f64 / q1 as f64;
+        let m2 = (sum as f64 - sum_b as f64) / q2 as f64;
+        let m1m2 = m1 - m2;
+        let variance = m1m2 * m1m2 * q1 as f64 * q2 as f64;
+        if variance >= max {
+            threshold = i as u8;
+            max = variance
         }
     }
 
@@ -276,12 +298,12 @@ fn find_one_corner(user_data: UserData<'_>, y: i32, left: i32, right: i32) {
         let xs: [i32; 2] = [left, right];
         let dy: i32 = y - psd.ref_0.y;
 
-        for i in 0..2 {
-            let dx = xs[i] - (*psd).ref_0.x;
+        for x in &xs {
+            let dx = *x - (*psd).ref_0.x;
             let d = dx * dx + dy * dy;
             if d > psd.scores[0] {
                 psd.scores[0] = d;
-                psd.corners[0].x = xs[i];
+                psd.corners[0].x = *x;
                 psd.corners[0].y = y;
             }
         }
@@ -295,15 +317,15 @@ fn find_other_corners(user_data: UserData<'_>, y: i32, left: i32, right: i32) {
         let mut psd = psd.borrow_mut();
         let xs: [i32; 2] = [left, right];
 
-        for i in 0..2 {
-            let up = xs[i] * psd.ref_0.x + y * psd.ref_0.y;
-            let right_0 = xs[i] * -psd.ref_0.y + y * psd.ref_0.x;
+        for x in &xs {
+            let up = *x * psd.ref_0.x + y * psd.ref_0.y;
+            let right_0 = *x * -psd.ref_0.y + y * psd.ref_0.x;
             let scores: [i32; 4] = [up, right_0, -up, -right_0];
 
             for j in 0..4 {
                 if scores[j] > psd.scores[j] {
                     psd.scores[j] = scores[j];
-                    psd.corners[j].x = xs[i];
+                    psd.corners[j].x = *x;
                     psd.corners[j].y = y;
                 }
             }
@@ -339,15 +361,18 @@ unsafe fn find_region_corners(q: *mut Quirc, rcode: i32, point: &Point, corners:
         .into_inner();
     psd.ref_0.x = psd.corners[0].x - psd.ref_0.x;
     psd.ref_0.y = psd.corners[0].y - psd.ref_0.y;
-    for i in 0..4 {
-        psd.corners[i] = region.seed;
+    for corner in &mut psd.corners[..] {
+        *corner = region.seed;
     }
+
     let i = region.seed.x * psd.ref_0.x + region.seed.y * psd.ref_0.y;
     psd.scores[0] = i;
     psd.scores[2] = -i;
+
     let i = region.seed.x * -psd.ref_0.y + region.seed.y * psd.ref_0.x;
     psd.scores[1] = i;
     psd.scores[3] = -i;
+
     flood_fill_seed(
         q,
         region.seed.x,
@@ -417,6 +442,8 @@ unsafe fn test_capstone(q: *mut Quirc, x: i32, y: i32, pb: &[i32]) {
 }
 
 unsafe fn finder_scan(q: *mut Quirc, y: i32) {
+    static CHECK: [i32; 5] = [1, 1, 3, 1, 1];
+
     let start = (y * (*q).w as i32) as usize;
     let row = &(*q).pixels[start..start + (*q).w];
     let mut last_color = 0;
@@ -424,32 +451,31 @@ unsafe fn finder_scan(q: *mut Quirc, y: i32) {
     let mut run_count = 0;
     let mut pb: [i32; 5] = [0; 5];
 
-    for x in 0..(*q).w {
-        let color = if row[x as usize] as i32 != 0 { 1 } else { 0 };
+    for (x, pixel) in row.iter().enumerate() {
+        let color = if *pixel as i32 != 0 { 1 } else { 0 };
+
         if x != 0 && color != last_color {
             pb.copy_within(1.., 0);
             pb[4] = run_length;
             run_length = 0;
             run_count += 1;
             if color == 0 && run_count >= 5 {
-                static CHECK: [i32; 5] = [1, 1, 3, 1, 1];
-                let mut ok: i32 = 1;
+                let mut ok = 1;
                 let avg = (pb[0] + pb[1] + pb[3] + pb[4]) / 4;
                 let err = avg * 3 / 4;
-                let mut i = 0;
-                while i < 5 {
-                    if pb[i as usize] < CHECK[i as usize] * avg - err
-                        || pb[i as usize] > CHECK[i as usize] * avg + err
-                    {
-                        ok = 0
+
+                for (pb, check) in pb.iter().zip(CHECK.iter()) {
+                    if *pb < *check * avg - err || *pb > *check * avg + err {
+                        ok = 0;
                     }
-                    i += 1
                 }
+
                 if ok != 0 {
                     test_capstone(q, x as i32, y, &pb);
                 }
             }
         }
+
         run_length += 1;
         last_color = color;
     }
@@ -460,8 +486,8 @@ unsafe fn find_alignment_pattern(q: *mut Quirc, index: i32) {
     let c0 = &mut (*q).capstones[qr.caps[0] as usize];
     let c2 = &mut (*q).capstones[qr.caps[2] as usize];
 
-    let mut a = Point { x: 0, y: 0 };
-    let mut c = Point { x: 0, y: 0 };
+    let mut a = Point::default();
+    let mut c = Point::default();
     let mut step_size = 1;
     let mut dir = 0;
     let mut u = 0.;
@@ -478,16 +504,17 @@ unsafe fn find_alignment_pattern(q: *mut Quirc, index: i32) {
     perspective_unmap(&(*c2).c, &mut b, &mut u, &mut v);
     perspective_map(&(*c2).c, u + 1.0f64, v, &mut c);
     let size_estimate = ((a.x - b.x) * -(c.y - b.y) + (a.y - b.y) * (c.x - b.x)).abs();
+
     /* Spiral outwards from the estimate point until we find something
      * roughly the right size. Don't look too far from the estimate
      * point.
      */
+    static DX_MAP: [i32; 4] = [1, 0, -1, 0];
+    static DY_MAP: [i32; 4] = [0, -1, 0, 1];
+
     while step_size * step_size < size_estimate * 100 {
-        static mut DX_MAP: [i32; 4] = [1, 0, -1, 0];
-        static mut DY_MAP: [i32; 4] = [0, -1, 0, 1];
-        let mut i = 0;
-        while i < step_size {
-            let code: i32 = region_code(q, b.x, b.y);
+        for _ in 0..step_size {
+            let code = region_code(q, b.x, b.y);
             if code >= 0 {
                 let reg = &mut (*q).regions[code as usize];
                 if reg.count >= size_estimate / 2 && reg.count <= size_estimate * 2 {
@@ -497,8 +524,8 @@ unsafe fn find_alignment_pattern(q: *mut Quirc, index: i32) {
             }
             b.x += DX_MAP[dir as usize];
             b.y += DY_MAP[dir as usize];
-            i += 1
         }
+
         dir = (dir + 1) % 4;
         if dir & 1 == 0 {
             step_size += 1
@@ -511,11 +538,11 @@ fn find_leftmost_to_line(user_data: UserData<'_>, y: i32, left: i32, right: i32)
         let mut psd = psd.borrow_mut();
         let xs: [i32; 2] = [left, right];
 
-        for i in 0..2 {
-            let d = -psd.ref_0.y * xs[i] + psd.ref_0.x * y;
+        for x in &xs {
+            let d = -psd.ref_0.y * *x + psd.ref_0.x * y;
             if d < psd.scores[0] {
                 psd.scores[0] = d;
-                psd.corners[0].x = xs[i];
+                psd.corners[0].x = *x;
                 psd.corners[0].y = y;
             }
         }
@@ -568,19 +595,19 @@ unsafe fn timing_scan(q: *const Quirc, p0: *const Point, p1: *const Point) -> i3
     }
     x = (*p0).x;
     y = (*p0).y;
-    let mut i = 0;
-    while i <= d {
+
+    for _ in 0..=d {
         if y < 0 || y >= (*q).h as i32 || x < 0 || x >= (*q).w as i32 {
             break;
         }
         let pixel = (*q).pixels[(y * (*q).w as i32 + x) as usize] as i32;
         if pixel != 0 {
             if run_length >= 2 {
-                count += 1
+                count += 1;
             }
-            run_length = 0
+            run_length = 0;
         } else {
-            run_length += 1
+            run_length += 1;
         }
         a += n;
         *dom += dom_step;
@@ -588,9 +615,9 @@ unsafe fn timing_scan(q: *const Quirc, p0: *const Point, p1: *const Point) -> i3
             *nondom += nondom_step;
             a -= d
         }
-        i += 1
     }
-    return count;
+
+    count
 }
 
 /// Try the measure the timing pattern for a given QR code. This does
@@ -603,33 +630,35 @@ unsafe fn timing_scan(q: *const Quirc, p0: *const Point, p1: *const Point) -> i3
 /// a horizontal and a vertical timing scan.
 unsafe fn measure_timing_pattern(q: *mut Quirc, index: i32) -> i32 {
     let mut qr = &mut (*q).grids[index as usize];
-    for i in 0..3 {
-        static US: [f64; 3] = [6.5, 6.5, 0.5];
-        static VS: [f64; 3] = [0.5, 6.5, 6.5];
-        let cap = &mut (*q).capstones[qr.caps[i as usize] as usize];
 
-        perspective_map(
-            &(*cap).c,
-            US[i as usize],
-            VS[i as usize],
-            &mut qr.tpep[i as usize],
-        );
+    static US: [f64; 3] = [6.5, 6.5, 0.5];
+    static VS: [f64; 3] = [0.5, 6.5, 6.5];
+
+    for (i, (us, vs)) in US.iter().zip(VS.iter()).enumerate() {
+        let cap = &mut (*q).capstones[qr.caps[i] as usize];
+
+        perspective_map(&(*cap).c, *us, *vs, &mut qr.tpep[i]);
     }
+
     qr.hscan = timing_scan(q, &mut qr.tpep[1], &mut qr.tpep[2]);
     qr.vscan = timing_scan(q, &mut qr.tpep[1], &mut qr.tpep[0]);
+
     let mut scan = qr.hscan;
     if qr.vscan > scan {
         scan = qr.vscan
     }
+
     /* If neither scan worked, we can't go any further. */
     if scan < 0 {
         return -1;
     }
+
     /* Choose the nearest allowable grid size */
     let size = scan * 2 + 13;
     let ver = (size - 15) / 4;
     qr.grid_size = ver * 4 + 17;
-    return 0;
+
+    0
 }
 
 /// Read a cell from a grid using the currently set perspective
@@ -637,7 +666,7 @@ unsafe fn measure_timing_pattern(q: *mut Quirc, index: i32) -> i32 {
 /// out of image bounds.
 unsafe fn read_cell(q: *const Quirc, index: i32, x: i32, y: i32) -> i32 {
     let qr = &(*q).grids[index as usize];
-    let mut p = Point { x: 0, y: 0 };
+    let mut p = Point::default();
 
     perspective_map(&qr.c, x as f64 + 0.5f64, y as f64 + 0.5f64, &mut p);
     if p.y < 0 || p.y >= (*q).h as i32 || p.x < 0 || p.x >= (*q).w as i32 {
@@ -662,16 +691,18 @@ fn fitness_cell(qr: &Grid, image: &Image<'_>, x: i32, y: i32) -> i32 {
     static OFFSETS: [f64; 3] = [0.3, 0.5, 0.7];
 
     let mut score = 0;
-    for v in 0..3 {
-        for u in 0..3 {
-            let mut p = Point::default();
-            perspective_map(&qr.c, x as f64 + OFFSETS[u], y as f64 + OFFSETS[v], &mut p);
+    let mut p = Point::default();
+
+    for v in &OFFSETS {
+        for u in &OFFSETS {
+            p.clear();
+            perspective_map(&qr.c, x as f64 + *u, y as f64 + *v, &mut p);
 
             if !(p.y < 0 || p.y >= image.height as i32 || p.x < 0 || p.x >= image.width as i32) {
                 if image.pixels[(p.y * image.width as i32 + p.x) as usize] != 0 {
-                    score += 1
+                    score += 1;
                 } else {
-                    score -= 1
+                    score -= 1;
                 }
             }
         }
@@ -738,17 +769,18 @@ fn fitness_all(q: &Quirc, index: i32) -> i32 {
 
     /* Check alignment patterns */
     let mut ap_count = 0;
-    while ap_count < 7 && info.apat[ap_count as usize] != 0 {
-        ap_count += 1
-    }
-    for i in 1..ap_count - 1 {
-        score += fitness_apat(qr, &image, 6, info.apat[i as usize]);
-        score += fitness_apat(qr, &image, info.apat[i as usize], 6);
+    while ap_count < 7 && info.apat[ap_count] != 0 {
+        ap_count += 1;
     }
 
-    for i in 1..ap_count {
-        for j in 1..ap_count {
-            score += fitness_apat(qr, &image, info.apat[i as usize], info.apat[j as usize]);
+    for x in &info.apat[1..ap_count - 1] {
+        score += fitness_apat(qr, &image, 6, *x);
+        score += fitness_apat(qr, &image, *x, 6);
+    }
+
+    for x in &info.apat[1..ap_count] {
+        for y in &info.apat[1..ap_count] {
+            score += fitness_apat(qr, &image, *x, *y);
         }
     }
 
@@ -759,21 +791,18 @@ unsafe fn jiggle_perspective(q: *mut Quirc, index: i32) {
     let mut qr = &mut (*q).grids[index as usize];
     let mut best = fitness_all(&*q, index);
     let mut adjustments: [f64; 8] = [0.; 8];
-    for i in 0..8 {
-        adjustments[i] = qr.c[i] * 0.02;
+
+    for (a_val, c_val) in adjustments.iter_mut().zip(qr.c.iter()) {
+        *a_val = c_val * 0.02;
     }
+
     for _pass in 0..5 {
         for i in 0..16 {
             let j = i >> 1;
             let old = qr.c[j];
             let step = adjustments[j];
-            let new: f64;
-            if i & 1 != 0 {
-                new = old + step
-            } else {
-                new = old - step
-            }
-            qr.c[j] = new;
+            qr.c[j] = if i & 1 != 0 { old + step } else { old - step };
+
             let test = fitness_all(&*q, index);
             if test > best {
                 best = test
@@ -782,8 +811,8 @@ unsafe fn jiggle_perspective(q: *mut Quirc, index: i32) {
             }
         }
 
-        for i in 0..8 {
-            adjustments[i] *= 0.5;
+        for val in &mut adjustments {
+            *val *= 0.5;
         }
     }
 }
@@ -818,8 +847,7 @@ unsafe fn rotate_capstone(cap: *mut Capstone, h0: *const Point, hd: *const Point
     let mut best = 0;
     let mut best_score = 2147483647;
 
-    for j in 0..4 {
-        let p = &(*cap).corners[j];
+    for (j, p) in (*cap).corners.iter().enumerate() {
         let score = (p.x - (*h0).x) * -(*hd).y + (p.y - (*h0).y) * (*hd).x;
         if j == 0 || score < best_score {
             best = j;
@@ -828,8 +856,8 @@ unsafe fn rotate_capstone(cap: *mut Capstone, h0: *const Point, hd: *const Point
     }
 
     /* Rotate the capstone */
-    for j in 0..4 {
-        copy[j] = (*cap).corners[(j + best) % 4];
+    for (i, copy) in copy.iter_mut().enumerate() {
+        *copy = (*cap).corners[(i + best) % 4];
     }
 
     (*cap).corners = copy;
@@ -876,8 +904,8 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: i32, b: i32, mut c: i32) {
     /* Rotate each capstone so that corner 0 is top-left with respect
      * to the grid.
      */
-    for i in 0..3 {
-        let mut cap = &mut (*q).capstones[qr.caps[i] as usize];
+    for cap_index in &qr.caps {
+        let mut cap = &mut (*q).capstones[*cap_index as usize];
         rotate_capstone(cap, &mut h0, &mut hd);
         cap.qr_grid = qr_index as i32;
     }
@@ -953,9 +981,10 @@ unsafe fn record_qr_grid(q: *mut Quirc, mut a: i32, b: i32, mut c: i32) {
     /* We've been unable to complete setup for this grid. Undo what we've
      * recorded and pretend it never happened.
      */
-    for i in 0..3 {
-        (*q).capstones[qr.caps[i as usize] as usize].qr_grid = -1;
+    for cap_index in &qr.caps {
+        (*q).capstones[*cap_index as usize].qr_grid = -1;
     }
+
     (*q).grids.pop();
 }
 
@@ -965,10 +994,8 @@ unsafe fn test_neighbours(q: *mut Quirc, i: i32, hlist: &NeighbourList, vlist: &
     let mut best_v = -1;
 
     /* Test each possible grouping */
-    for j in 0..hlist.count {
-        for k in 0..vlist.count {
-            let hn = &hlist.n[j as usize];
-            let vn = &vlist.n[k as usize];
+    for hn in &hlist.n[..hlist.count] {
+        for vn in &vlist.n[0..vlist.count] {
             let score = (1.0 - hn.distance / vn.distance).abs();
 
             if score > 2.5 {
@@ -1014,12 +1041,11 @@ unsafe fn test_grouping(q: *mut Quirc, i: i32) {
     /* Look for potential neighbours by examining the relative gradients
      * from this capstone to others.
      */
-    for j in 0..(*q).num_capstones() as i32 {
-        let c2 = &mut (*q).capstones[j as usize];
+    for (j, c2) in (*q).capstones.iter_mut().enumerate() {
         let mut u = 0.;
         let mut v = 0.;
 
-        if i == j || c2.qr_grid >= 0 {
+        if i as usize == j || c2.qr_grid >= 0 {
             continue;
         }
 
@@ -1031,7 +1057,7 @@ unsafe fn test_grouping(q: *mut Quirc, i: i32) {
             let count = hlist.count as usize;
             hlist.count += 1;
             let n = &mut hlist.n[count];
-            n.index = j;
+            n.index = j as i32;
             n.distance = v;
         }
 
@@ -1039,7 +1065,7 @@ unsafe fn test_grouping(q: *mut Quirc, i: i32) {
             let count = vlist.count as usize;
             vlist.count += 1;
             let n = &mut vlist.n[count];
-            n.index = j;
+            n.index = j as i32;
             n.distance = u;
         }
     }
@@ -1054,15 +1080,13 @@ unsafe fn test_grouping(q: *mut Quirc, i: i32) {
 unsafe fn pixels_setup(q: *mut Quirc, threshold: u8) {
     let source = &(*q).image;
     let dest = &mut (*q).pixels;
-    let length = (*q).w * (*q).h;
 
-    for i in 0..length {
-        let value = source[i];
-        dest[i] = if (value as i32) < threshold as i32 {
+    for (value, dest) in source.iter().zip(dest.iter_mut()) {
+        *dest = if (*value as i32) < threshold as i32 {
             1
         } else {
             0
-        } as Pixel
+        } as Pixel;
     }
 }
 /// These functions are used to process images for QR-code recognition.
