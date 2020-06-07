@@ -217,12 +217,11 @@ fn flood_fill_seed<F>(
 
 // --- Adaptive thresholding
 
-fn otsu(q: &Quirc) -> u8 {
+fn otsu(q: &Quirc, image: &[u8]) -> u8 {
     let num_pixels = q.w * q.h;
 
     // Calculate histogram
     let mut histogram: [u32; 256] = [0; 256];
-    let image = &q.image;
 
     for value in image {
         let value = *value as usize;
@@ -1164,8 +1163,7 @@ fn test_grouping(
     test_neighbours(image, regions, capstones, grids, i, &hlist, &vlist);
 }
 
-fn pixels_setup(q: &mut Quirc, threshold: u8) {
-    let source = &q.image;
+fn pixels_setup(q: &mut Quirc, source: &[u8], threshold: u8) {
     let dest = &mut q.pixels;
 
     for (value, dest) in source.iter().zip(dest.iter_mut()) {
@@ -1179,28 +1177,23 @@ fn pixels_setup(q: &mut Quirc, threshold: u8) {
 
 impl Quirc {
     /// These functions are used to process images for QR-code recognition.
-    /// quirc_begin() must first be called to obtain access to a buffer into
-    /// which the input image should be placed. Optionally, the current
-    /// width and height may be returned.
-    pub fn begin(&mut self, w: &mut usize, h: &mut usize) -> *mut u8 {
+    /// The locations and content of each
+    /// code may be obtained using accessor functions described below.
+    pub fn identify(&mut self, image: &[u8]) {
+        assert_eq!(
+            self.w * self.h,
+            image.len(),
+            "image must be exactly of the size width * height"
+        );
+
         self.regions.push(Default::default());
         self.regions.push(Default::default());
 
         self.capstones.clear();
         self.grids.clear();
 
-        *w = self.w;
-        *h = self.h;
-
-        self.image.as_mut_ptr()
-    }
-
-    /// After filling the buffer, quirc_end() should be called to process
-    /// the image for QR-code recognition. The locations and content of each
-    /// code may be obtained using accessor functions described below.
-    pub fn end(&mut self) {
-        let threshold = otsu(self);
-        pixels_setup(self, threshold);
+        let threshold = otsu(self, image);
+        pixels_setup(self, image, threshold);
 
         let mut image = ImageMut {
             pixels: &mut self.pixels,

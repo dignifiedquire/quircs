@@ -61,11 +61,11 @@ fn add_result(mut sum: &mut ResultInfo, inf: &mut ResultInfo) {
     (*sum).total_time = (*sum).total_time.wrapping_add((*inf).total_time);
 }
 
-fn load_jpeg(_dec: &mut Quirc, _path: &PathBuf) -> i32 {
+fn load_jpeg(_dec: &mut Quirc, _path: &PathBuf) -> Vec<u8> {
     todo!()
 }
 
-fn load_png(dec: &mut Quirc, path: &PathBuf) -> i32 {
+fn load_png(dec: &mut Quirc, path: &PathBuf) -> Vec<u8> {
     let img = image::open(&path)
         .expect("failed to open image")
         .into_luma();
@@ -74,15 +74,7 @@ fn load_png(dec: &mut Quirc, path: &PathBuf) -> i32 {
 
     dec.resize(width, height);
 
-    let image_ptr = dec.begin(&mut 0, &mut 0);
-    // copy image to the ptr
-    for (x, y, px) in img.enumerate_pixels() {
-        unsafe {
-            *image_ptr.add(y as usize * width as usize + x as usize) = px[0];
-        }
-    }
-
-    0
+    img.enumerate_pixels().map(|(_x, _y, px)| px[0]).collect()
 }
 
 fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut ResultInfo) -> i32 {
@@ -93,22 +85,17 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
     let start = Instant::now();
     let total_start = start;
 
-    let ret = if path.extension().unwrap() == "jpg" || path.extension().unwrap() == "jpeg" {
+    let raw_image = if path.extension().unwrap() == "jpg" || path.extension().unwrap() == "jpeg" {
         load_jpeg(decoder, &path)
     } else if path.extension().unwrap() == "png" {
         load_png(decoder, &path)
     } else {
         panic!("unsupported extension: {:?}", path.extension());
     };
-
     (*info).load_time = start.elapsed().as_millis();
 
-    if ret < 0 {
-        panic!("{}: load failed", path.display());
-    }
-
     let start = Instant::now();
-    decoder.end();
+    decoder.identify(&raw_image);
     (*info).identify_time = start.elapsed().as_millis();
     (*info).id_count = decoder.count();
 

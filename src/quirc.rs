@@ -4,7 +4,6 @@ pub type Pixel = u16;
 
 #[derive(Debug, Clone, Default)]
 pub struct Quirc {
-    pub image: Vec<u8>,
     pub pixels: Vec<Pixel>,
     pub w: usize,
     pub h: usize,
@@ -26,7 +25,6 @@ impl Quirc {
     /// This function returns 0 on success, or -1 if sufficient memory could  not be allocated.
     pub fn resize(&mut self, width: usize, height: usize) {
         let newdim = width * height;
-        self.image.resize(newdim, 0);
         self.pixels.resize(newdim, 0);
         self.w = width;
         self.h = height;
