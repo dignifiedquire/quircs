@@ -616,47 +616,42 @@ fn find_leftmost_to_line(user_data: &UserData<'_>, y: usize, left: i32, right: i
 /// Do a Bresenham scan from one point to another and count the number
 /// of black/white transitions.
 fn timing_scan(image: &Image<'_>, p0: &Point, p1: &Point) -> i32 {
-    let mut n: i32 = p1.x - p0.x;
-    let mut d: i32 = p1.y - p0.y;
-    let mut x: i32 = p0.x;
-    let mut y: i32 = p0.y;
-    let dom: *mut i32;
-    let nondom: *mut i32;
-    let dom_step: i32;
-    let nondom_step: i32;
-    let mut a: i32 = 0;
-    let mut run_length: i32 = 0;
-    let mut count: i32 = 0;
+    let mut n = p1.x - p0.x;
+    let mut d = p1.y - p0.y;
+    let mut x = p0.x;
+    let mut y = p0.y;
+
     if p0.x < 0 || p0.y < 0 || p0.x >= image.width as i32 || p0.y >= image.height as i32 {
         return -1;
     }
     if p1.x < 0 || p1.y < 0 || p1.x >= image.width as i32 || p1.y >= image.height as i32 {
         return -1;
     }
-    if n.abs() > d.abs() {
-        let swap: i32 = n;
-        n = d;
-        d = swap;
-        dom = &mut x;
-        nondom = &mut y
+
+    let is_x_dom = if n.abs() > d.abs() {
+        std::mem::swap(&mut n, &mut d);
+        true
     } else {
-        dom = &mut y;
-        nondom = &mut x
-    }
-    if n < 0 {
+        false
+    };
+
+    let nondom_step = if n < 0 {
         n = -n;
-        nondom_step = -1
+        -1
     } else {
-        nondom_step = 1
-    }
-    if d < 0 {
+        1
+    };
+
+    let dom_step = if d < 0 {
         d = -d;
-        dom_step = -1
+        -1
     } else {
-        dom_step = 1
-    }
-    x = p0.x;
-    y = p0.y;
+        1
+    };
+
+    let mut a = 0;
+    let mut run_length = 0;
+    let mut count = 0;
 
     for _ in 0..=d {
         if y < 0 || y >= image.height as i32 || x < 0 || x >= image.width as i32 {
@@ -672,10 +667,18 @@ fn timing_scan(image: &Image<'_>, p0: &Point, p1: &Point) -> i32 {
             run_length += 1;
         }
         a += n;
-        unsafe { *dom += dom_step };
+        if is_x_dom {
+            x += dom_step;
+        } else {
+            y += dom_step;
+        }
         if a >= d {
-            unsafe { *nondom += nondom_step };
-            a -= d
+            if is_x_dom {
+                y += nondom_step;
+            } else {
+                x += dom_step;
+            }
+            a -= d;
         }
     }
 
