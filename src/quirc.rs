@@ -51,7 +51,7 @@ impl Quirc {
 #[repr(C)]
 pub struct Grid {
     pub caps: [usize; 3],
-    pub align_region: i32,
+    pub align_region: Option<Pixel>,
     pub align: Point,
     pub tpep: [Point; 3],
     pub hscan: i32,
