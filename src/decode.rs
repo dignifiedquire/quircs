@@ -706,34 +706,38 @@ fn decode_payload(mut data: &mut Data, ds: &mut Datastream) -> Result<(), Decode
     Ok(())
 }
 
-/// Decode a QR-code, returning the payload data.
-pub fn quirc_decode(code: &Code, mut data: &mut Data) -> Result<(), DecodeError> {
-    let mut ds: Datastream = Datastream {
-        raw: [0; 8896],
-        data_bits: 0,
-        ptr: 0,
-        data: [0; 8896],
-    };
+impl Code {
+    /// Decode a QR-code, returning the payload data.
+    pub fn decode(&self) -> Result<Data, DecodeError> {
+        let mut ds: Datastream = Datastream {
+            raw: [0; 8896],
+            data_bits: 0,
+            ptr: 0,
+            data: [0; 8896],
+        };
 
-    if (code.size - 17) % 4 != 0 {
-        return Err(DecodeError::InvalidGridSize);
+        if (self.size - 17) % 4 != 0 {
+            return Err(DecodeError::InvalidGridSize);
+        }
+
+        let mut data = Data::default();
+
+        data.version = (self.size - 17) / 4;
+        if data.version < 1 || data.version > 40 {
+            return Err(DecodeError::InvalidVersion);
+        }
+
+        /* Read format information -- try both locations */
+        let mut res = read_format(self, &mut data, 0);
+        if res.is_err() {
+            res = read_format(self, &mut data, 1);
+        }
+        res?;
+
+        read_data(self, &mut data, &mut ds);
+        codestream_ecc(&mut data, &mut ds)?;
+        decode_payload(&mut data, &mut ds)?;
+
+        Ok(data)
     }
-
-    data.version = (code.size - 17) / 4;
-    if data.version < 1 || data.version > 40 {
-        return Err(DecodeError::InvalidVersion);
-    }
-
-    /* Read format information -- try both locations */
-    let mut res = read_format(code, data, 0);
-    if res.is_err() {
-        res = read_format(code, data, 1);
-    }
-    res?;
-
-    read_data(code, data, &mut ds);
-    codestream_ecc(data, &mut ds)?;
-    decode_payload(data, &mut ds)?;
-
-    Ok(())
 }

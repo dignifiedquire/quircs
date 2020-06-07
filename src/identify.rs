@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 
+use crate::error::ExtractError;
 use crate::quirc::*;
 use crate::version_db::*;
 
@@ -165,23 +166,21 @@ fn flood_fill_seed<F>(
 
     let mut left = x as usize;
     let mut right = x as usize;
-
     let width = image.width;
-    let to_range = |start| start..start + width;
 
-    {
-        let row = &mut image.pixels[to_range(y * width)];
-        while left > 0 && row[left - 1] == from {
-            left -= 1;
-        }
-        while right < width - 1 && row[right + 1] == from {
-            right += 1;
-        }
+    assert!(image.pixels.len() >= (y + 1) * width);
 
-        // Fill the extent
-        for val in &mut row[left..=right] {
-            *val = to;
-        }
+    let row = &mut image.pixels[y * width..(y + 1) * width];
+    while left > 0 && row[left - 1] == from {
+        left -= 1;
+    }
+    while right < width - 1 && row[right + 1] == from {
+        right += 1;
+    }
+
+    // Fill the extent
+    for val in &mut row[left..=right] {
+        *val = to;
     }
 
     if let Some(func) = func {
@@ -1214,12 +1213,13 @@ impl Quirc {
     }
 
     /// Extract the QR-code specified by the given index.
-    pub fn extract(&self, index: usize, code: &mut Code) {
+    pub fn extract(&self, index: usize) -> Result<Code, ExtractError> {
         let qr = self.grids[index];
         if index > self.count() {
-            return;
+            return Err(ExtractError::OutOfBounds);
         }
-        code.clear();
+
+        let mut code = Code::default();
 
         perspective_map(&qr.c, 0.0, 0.0, &mut code.corners[0]);
         perspective_map(&qr.c, qr.grid_size as f64, 0.0, &mut code.corners[1]);
@@ -1242,5 +1242,7 @@ impl Quirc {
                 i += 1;
             }
         }
+
+        Ok(code)
     }
 }

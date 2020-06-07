@@ -2,7 +2,7 @@ use num_derive::{FromPrimitive, ToPrimitive};
 
 pub type Pixel = u16;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Quirc {
     pub pixels: Vec<Pixel>,
     pub w: usize,
@@ -10,6 +10,19 @@ pub struct Quirc {
     pub regions: Vec<Region>,
     pub capstones: Vec<Capstone>,
     pub grids: Vec<Grid>,
+}
+
+impl Default for Quirc {
+    fn default() -> Self {
+        Self {
+            pixels: Vec::new(),
+            w: 0,
+            h: 0,
+            regions: Vec::with_capacity(254),
+            capstones: Vec::with_capacity(32),
+            grids: Vec::with_capacity(8),
+        }
+    }
 }
 
 impl Quirc {
@@ -101,6 +114,16 @@ pub struct Code {
     /// where i = (y * size) + x.
     pub size: i32,
     pub cell_bitmap: [u8; 3917],
+}
+
+impl Default for Code {
+    fn default() -> Self {
+        Self {
+            corners: [Point::default(); 4],
+            size: 0,
+            cell_bitmap: [0; 3917],
+        }
+    }
 }
 
 impl Code {

@@ -17,3 +17,9 @@ pub enum DecodeError {
     #[error("Data underflow")]
     DataUnderflow,
 }
+
+#[derive(Debug, Error)]
+pub enum ExtractError {
+    #[error("Out of bounds")]
+    OutOfBounds,
+}

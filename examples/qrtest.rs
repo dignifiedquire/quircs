@@ -73,19 +73,16 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
     info.load_time = start.elapsed().as_millis();
 
     let start = Instant::now();
+
     decoder.identify(&img);
+
     info.identify_time = start.elapsed().as_millis();
     info.id_count = decoder.count();
 
     for i in 0..info.id_count as usize {
-        let mut code: Code = Code {
-            corners: [Point { x: 0, y: 0 }; 4],
-            size: 0,
-            cell_bitmap: [0; 3917],
-        };
-        let mut data = Data::default();
-        decoder.extract(i, &mut code);
-        if quirc_decode(&mut code, &mut data).is_ok() {
+        let code = decoder.extract(i).unwrap();
+
+        if code.decode().is_ok() {
             info.decode_count += 1
         }
     }
@@ -104,25 +101,22 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
 
     if opts.cell_dump || opts.verbose {
         for i in 0..info.id_count {
-            let mut code_0 = Code {
-                corners: [Point { x: 0, y: 0 }; 4],
-                size: 0,
-                cell_bitmap: [0; 3917],
-            };
-            decoder.extract(i, &mut code_0);
+            let code = decoder.extract(i).unwrap();
             if opts.cell_dump {
-                dump_cells(&mut code_0);
+                dump_cells(&code);
                 println!();
             }
 
             if opts.verbose {
-                let mut data_0 = Data::default();
-                if let Err(err) = quirc_decode(&mut code_0, &mut data_0) {
-                    println!("  ERROR: {}\n", err);
-                } else {
-                    println!("\n  Decode successful:");
-                    dump_data(&mut data_0);
-                    println!();
+                match code.decode() {
+                    Ok(data) => {
+                        println!("\n  Decode successful:");
+                        dump_data(&data);
+                        println!();
+                    }
+                    Err(err) => {
+                        println!("  ERROR: {}\n", err);
+                    }
                 }
             }
         }
