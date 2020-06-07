@@ -1,3 +1,5 @@
+#![allow(clippy::many_single_char_names)]
+
 use std::cell::RefCell;
 
 use crate::quirc::*;
@@ -144,6 +146,7 @@ impl<'a> From<&'a mut Quirc> for ImageMut<'a> {
 }
 
 /// Flood fill algorithm. See [wikipedia](https://en.wikipedia.org/wiki/Flood_fill) for more details.
+#[allow(clippy::too_many_arguments)]
 fn flood_fill_seed<F>(
     image: &mut ImageMut<'_>,
     x: i32,
@@ -194,16 +197,7 @@ fn flood_fill_seed<F>(
         for i in left..=right {
             let val = image.pixels[offset + i];
             if val == from {
-                flood_fill_seed(
-                    image,
-                    i as i32,
-                    y - 1,
-                    from,
-                    to,
-                    func,
-                    user_data.clone(),
-                    depth + 1,
-                );
+                flood_fill_seed(image, i as i32, y - 1, from, to, func, user_data, depth + 1);
             }
         }
     }
@@ -215,16 +209,7 @@ fn flood_fill_seed<F>(
         for i in left..=right {
             let val = image.pixels[offset + i];
             if val == from {
-                flood_fill_seed(
-                    image,
-                    i as i32,
-                    y + 1,
-                    from,
-                    to,
-                    func,
-                    user_data.clone(),
-                    depth + 1,
-                );
+                flood_fill_seed(image, i as i32, y + 1, from, to, func, user_data, depth + 1);
             }
         }
     }
@@ -355,9 +340,9 @@ fn find_other_corners(user_data: &UserData<'_>, y: usize, left: i32, right: i32)
             let right_0 = *x * -psd.ref_0.y + y as i32 * psd.ref_0.x;
             let scores: [i32; 4] = [up, right_0, -up, -right_0];
 
-            for j in 0..4 {
-                if scores[j] > psd.scores[j] {
-                    psd.scores[j] = scores[j];
+            for (j, score) in scores.iter().enumerate() {
+                if *score > psd.scores[j] {
+                    psd.scores[j] = *score;
                     psd.corners[j].x = *x;
                     psd.corners[j].y = y as i32;
                 }
@@ -559,9 +544,9 @@ fn find_alignment_pattern(
     /* Guess another two corners of the alignment pattern so that we
      * can estimate its size.
      */
-    perspective_unmap(&c0.c, &mut b, &mut u, &mut v);
+    perspective_unmap(&c0.c, &b, &mut u, &mut v);
     perspective_map(&c0.c, u, v + 1.0f64, &mut a);
-    perspective_unmap(&c2.c, &mut b, &mut u, &mut v);
+    perspective_unmap(&c2.c, &b, &mut u, &mut v);
     perspective_map(&c2.c, u + 1.0f64, v, &mut c);
     let size_estimate = ((a.x - b.x) * -(c.y - b.y) + (a.y - b.y) * (c.x - b.x)).abs();
 
@@ -952,7 +937,7 @@ fn record_qr_grid(
     /* Construct the hypotenuse line from A to C. B should be to
      * the left of this line.
      */
-    let mut h0 = capstones[a].center;
+    let h0 = capstones[a].center;
     let mut hd = Point {
         x: capstones[c].center.x - capstones[a].center.x,
         y: capstones[c].center.y - capstones[a].center.y,
@@ -960,9 +945,7 @@ fn record_qr_grid(
 
     /* Make sure A-B-C is clockwise */
     if (capstones[b].center.x - h0.x) * -hd.y + (capstones[b].center.y - h0.y) * hd.x > 0 {
-        let swap = a;
-        a = c;
-        c = swap;
+        std::mem::swap(&mut a, &mut c);
         hd.x = -hd.x;
         hd.y = -hd.y
     }
@@ -983,24 +966,24 @@ fn record_qr_grid(
      */
     for cap_index in &qr.caps {
         let mut cap = &mut capstones[*cap_index];
-        rotate_capstone(cap, &mut h0, &mut hd);
+        rotate_capstone(cap, &h0, &hd);
         cap.qr_grid = qr_index as i32;
     }
 
     /* Check the timing pattern. This doesn't require a perspective
      * transform.
      */
-    if !(measure_timing_pattern(qr, capstones, &Image::from(&*image)) < 0) {
+    if measure_timing_pattern(qr, capstones, &Image::from(&*image)) >= 0 {
         /* Make an estimate based for the alignment pattern based on extending
          * lines from capstones A and C.
          */
-        if !(line_intersect(
+        if line_intersect(
             &capstones[a as usize].corners[0],
             &capstones[a as usize].corners[1],
             &capstones[c as usize].corners[0],
             &capstones[c as usize].corners[3],
             &mut qr.align,
-        ) == 0)
+        ) != 0
         {
             /* On V2+ grids, we should use the alignment pattern. */
             if qr.grid_size > 21 {
@@ -1153,7 +1136,7 @@ fn test_grouping(
             continue;
         }
 
-        perspective_unmap(&c1c, &mut c2.center, &mut u, &mut v);
+        perspective_unmap(&c1c, &c2.center, &mut u, &mut v);
         u = (u - 3.5).abs();
         v = (v - 3.5).abs();
 
@@ -1178,7 +1161,7 @@ fn test_grouping(
         return;
     }
 
-    test_neighbours(image, regions, capstones, grids, i, &mut hlist, &mut vlist);
+    test_neighbours(image, regions, capstones, grids, i, &hlist, &vlist);
 }
 
 fn pixels_setup(q: &mut Quirc, threshold: u8) {
