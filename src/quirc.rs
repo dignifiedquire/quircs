@@ -48,7 +48,7 @@ impl Quirc {
 #[derive(Debug, Copy, Clone, Default)]
 #[repr(C)]
 pub struct Grid {
-    pub caps: [i32; 3],
+    pub caps: [usize; 3],
     pub align_region: i32,
     pub align: Point,
     pub tpep: [Point; 3],

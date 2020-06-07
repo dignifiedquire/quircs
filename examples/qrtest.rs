@@ -301,8 +301,8 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> i32 {
         + tp.tv_nsec / 1000000 as libc::c_long) as libc::c_uint)
         .wrapping_sub(start);
     (*info).id_count = (*decoder).count() as i32;
-    let mut i = 0;
-    while i < (*info).id_count {
+
+    for i in 0..(*info).id_count as usize {
         let mut code: Code = Code {
             corners: [Point { x: 0, y: 0 }; 4],
             size: 0,
@@ -313,8 +313,8 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> i32 {
         if quirc_decode(&mut code, &mut data) as u64 == 0 {
             (*info).decode_count += 1
         }
-        i += 1
     }
+
     clock_gettime(_CLOCK_PROCESS_CPUTIME_ID, &mut tp);
     (*info).total_time = (*info).total_time.wrapping_add(
         ((tp.tv_sec * 1000 as libc::c_long + tp.tv_nsec / 1000000 as libc::c_long) as libc::c_uint)
@@ -330,8 +330,7 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> i32 {
         (*info).decode_count,
     );
     if want_cell_dump != 0 || want_verbose != 0 {
-        i = 0;
-        while i < (*info).id_count {
+        for i in 0..(*info).id_count as usize {
             let mut code_0: Code = Code {
                 corners: [Point { x: 0, y: 0 }; 4],
                 size: 0,
@@ -353,9 +352,9 @@ unsafe fn scan_file(path: &str, mut info: *mut result_info) -> i32 {
                     printf(b"\n\x00" as *const u8 as *const libc::c_char);
                 }
             }
-            i += 1
         }
     }
+
     (*info).file_count = 1;
     return 1;
 }
