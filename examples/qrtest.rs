@@ -1,5 +1,7 @@
-use quircs::*;
 use std::path::PathBuf;
+use std::time::Instant;
+
+use quircs::*;
 
 #[derive(Debug, Clone)]
 struct ResultInfo {
@@ -57,41 +59,21 @@ fn add_result(mut sum: &mut ResultInfo, inf: &mut ResultInfo) {
     sum.total_time = sum.total_time.wrapping_add(inf.total_time);
 }
 
-fn load_jpeg(_dec: &mut Quirc, _path: &PathBuf) -> Vec<u8> {
-    todo!()
-}
-
-fn load_png(dec: &mut Quirc, path: &PathBuf) -> Vec<u8> {
-    let img = image::open(&path)
-        .expect("failed to open image")
-        .into_luma();
-    let width = img.width() as usize;
-    let height = img.height() as usize;
-
-    dec.resize(width, height);
-
-    img.enumerate_pixels().map(|(_x, _y, px)| px[0]).collect()
-}
-
 fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut ResultInfo) -> i32 {
-    let path = std::path::PathBuf::from(path);
-
-    use std::time::Instant;
-
+    let path = PathBuf::from(path);
     let start = Instant::now();
     let total_start = start;
 
-    let raw_image = if path.extension().unwrap() == "jpg" || path.extension().unwrap() == "jpeg" {
-        load_jpeg(decoder, &path)
-    } else if path.extension().unwrap() == "png" {
-        load_png(decoder, &path)
-    } else {
-        panic!("unsupported extension: {:?}", path.extension());
-    };
+    let img = image::open(&path)
+        .expect("failed to open image")
+        .into_luma();
+
+    decoder.resize(img.width() as usize, img.height() as usize);
+
     info.load_time = start.elapsed().as_millis();
 
     let start = Instant::now();
-    decoder.identify(&raw_image);
+    decoder.identify(&img);
     info.identify_time = start.elapsed().as_millis();
     info.id_count = decoder.count();
 
