@@ -14,6 +14,5 @@ num-traits = "0.2.11"
 
 [dev-dependencies]
 image = "0.23.4"
-libc = "0.2"
 
 
