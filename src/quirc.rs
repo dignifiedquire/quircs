@@ -48,7 +48,6 @@ impl Quirc {
 }
 
 #[derive(Debug, Copy, Clone, Default)]
-#[repr(C)]
 pub struct Grid {
     pub caps: [usize; 3],
     pub align_region: Option<Pixel>,
@@ -61,7 +60,6 @@ pub struct Grid {
 }
 
 #[derive(Debug, Copy, Clone, Default)]
-#[repr(C)]
 pub struct Point {
     pub x: i32,
     pub y: i32,
@@ -75,7 +73,6 @@ impl Point {
 }
 
 #[derive(Debug, Copy, Clone, Default)]
-#[repr(C)]
 pub struct Capstone {
     pub ring: i32,
     pub stone: i32,
@@ -86,7 +83,6 @@ pub struct Capstone {
 }
 
 #[derive(Debug, Copy, Clone, Default)]
-#[repr(C)]
 pub struct Region {
     pub seed: Point,
     pub count: i32,
@@ -105,7 +101,6 @@ pub const QUIRC_SUCCESS: DecodeError = 0;
 /// This structure is used to return information about detected QR codes
 /// in the input image.
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct Code {
     /// The four corners of the QR-code, from top left, clockwise
     pub corners: [Point; 4],
@@ -134,7 +129,6 @@ impl Code {
 
 /// This structure holds the decoded QR-code data
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct Data {
     ///  Various parameters of the QR-code. These can mostly be  ignored
     /// if you only care about the data.

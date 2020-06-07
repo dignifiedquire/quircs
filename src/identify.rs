@@ -4,14 +4,12 @@ use crate::quirc::*;
 use crate::version_db::*;
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 struct Neighbour {
     pub index: i32,
     pub distance: f64,
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 struct NeighbourList {
     pub n: [Neighbour; 32],
     pub count: usize,

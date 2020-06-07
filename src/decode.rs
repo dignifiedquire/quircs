@@ -4,21 +4,19 @@ use crate::quirc::*;
 use crate::version_db::*;
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 struct Datastream {
-    pub raw: [u8; 8896],
-    pub data_bits: i32,
-    pub ptr: i32,
-    pub data: [u8; 8896],
+    raw: [u8; 8896],
+    data_bits: i32,
+    ptr: i32,
+    data: [u8; 8896],
 }
 
 /// Galois Field.
 #[derive(Copy, Clone)]
-#[repr(C)]
 struct GaloisField {
-    pub p: i32,
-    pub log: &'static [u8],
-    pub exp: &'static [u8],
+    p: i32,
+    log: &'static [u8],
+    exp: &'static [u8],
 }
 
 static GF16_EXP: [u8; 16] = [
