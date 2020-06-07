@@ -664,16 +664,17 @@ unsafe fn measure_timing_pattern(q: *mut Quirc, index: usize) -> i32 {
 /// Read a cell from a grid using the currently set perspective
 /// transform. Returns +/- 1 for black/white, 0 for cells which are
 /// out of image bounds.
-unsafe fn read_cell(q: *const Quirc, index: usize, x: i32, y: i32) -> i32 {
-    let qr = &(*q).grids[index];
+fn read_cell(q: &Quirc, index: usize, x: i32, y: i32) -> i32 {
+    let qr = &q.grids[index];
+
     let mut p = Point::default();
 
     perspective_map(&qr.c, x as f64 + 0.5f64, y as f64 + 0.5f64, &mut p);
-    if p.y < 0 || p.y >= (*q).h as i32 || p.x < 0 || p.x >= (*q).w as i32 {
+    if p.y < 0 || p.y >= q.h as i32 || p.x < 0 || p.x >= q.w as i32 {
         return 0;
     }
 
-    if (*q).pixels[(p.y * (*q).w as i32 + p.x) as usize] != 0 {
+    if q.pixels[(p.y * q.w as i32 + p.x) as usize] != 0 {
         1
     } else {
         -1
@@ -1075,9 +1076,9 @@ unsafe fn test_grouping(q: *mut Quirc, i: usize) {
     test_neighbours(q, i, &mut hlist, &mut vlist);
 }
 
-unsafe fn pixels_setup(q: *mut Quirc, threshold: u8) {
-    let source = &(*q).image;
-    let dest = &mut (*q).pixels;
+fn pixels_setup(q: &mut Quirc, threshold: u8) {
+    let source = &q.image;
+    let dest = &mut q.pixels;
 
     for (value, dest) in source.iter().zip(dest.iter_mut()) {
         *dest = if (*value as i32) < threshold as i32 {
@@ -1087,68 +1088,69 @@ unsafe fn pixels_setup(q: *mut Quirc, threshold: u8) {
         } as Pixel;
     }
 }
-/// These functions are used to process images for QR-code recognition.
-/// quirc_begin() must first be called to obtain access to a buffer into
-/// which the input image should be placed. Optionally, the current
-/// width and height may be returned.
-pub unsafe fn quirc_begin(q: *mut Quirc, w: &mut usize, h: &mut usize) -> *mut u8 {
-    let q = &mut *q;
 
-    q.regions.push(Default::default());
-    q.regions.push(Default::default());
+impl Quirc {
+    /// These functions are used to process images for QR-code recognition.
+    /// quirc_begin() must first be called to obtain access to a buffer into
+    /// which the input image should be placed. Optionally, the current
+    /// width and height may be returned.
+    pub fn begin(&mut self, w: &mut usize, h: &mut usize) -> *mut u8 {
+        self.regions.push(Default::default());
+        self.regions.push(Default::default());
 
-    q.capstones.clear();
-    q.grids.clear();
+        self.capstones.clear();
+        self.grids.clear();
 
-    *w = q.w;
-    *h = q.h;
+        *w = self.w;
+        *h = self.h;
 
-    q.image.as_mut_ptr()
-}
-
-/// After filling the buffer, quirc_end() should be called to process
-/// the image for QR-code recognition. The locations and content of each
-/// code may be obtained using accessor functions described below.
-pub unsafe fn quirc_end(q: *mut Quirc) {
-    let threshold = otsu(q);
-    pixels_setup(q, threshold);
-
-    for i in 0..(*q).h {
-        finder_scan(q, i);
+        self.image.as_mut_ptr()
     }
 
-    for i in 0..(*q).num_capstones() {
-        test_grouping(q, i);
+    /// After filling the buffer, quirc_end() should be called to process
+    /// the image for QR-code recognition. The locations and content of each
+    /// code may be obtained using accessor functions described below.
+    pub fn end(&mut self) {
+        let threshold = unsafe { otsu(self) };
+        pixels_setup(self, threshold);
+
+        for i in 0..self.h {
+            unsafe { finder_scan(self, i) };
+        }
+
+        for i in 0..self.num_capstones() {
+            unsafe { test_grouping(self, i) };
+        }
     }
-}
 
-/// Extract the QR-code specified by the given index.
-pub unsafe fn quirc_extract(q: *const Quirc, index: usize, code: &mut Code) {
-    let qr = &(*q).grids[index as usize];
-    if index > (*q).count() {
-        return;
-    }
-    code.clear();
+    /// Extract the QR-code specified by the given index.
+    pub fn extract(&self, index: usize, code: &mut Code) {
+        let qr = self.grids[index];
+        if index > self.count() {
+            return;
+        }
+        code.clear();
 
-    perspective_map(&qr.c, 0.0, 0.0, &mut (*code).corners[0]);
-    perspective_map(&qr.c, qr.grid_size as f64, 0.0, &mut (*code).corners[1]);
-    perspective_map(
-        &qr.c,
-        qr.grid_size as f64,
-        qr.grid_size as f64,
-        &mut (*code).corners[2],
-    );
-    perspective_map(&qr.c, 0.0, qr.grid_size as f64, &mut (*code).corners[3]);
-    (*code).size = qr.grid_size;
+        perspective_map(&qr.c, 0.0, 0.0, &mut code.corners[0]);
+        perspective_map(&qr.c, qr.grid_size as f64, 0.0, &mut code.corners[1]);
+        perspective_map(
+            &qr.c,
+            qr.grid_size as f64,
+            qr.grid_size as f64,
+            &mut code.corners[2],
+        );
+        perspective_map(&qr.c, 0.0, qr.grid_size as f64, &mut code.corners[3]);
+        code.size = qr.grid_size;
 
-    let mut i = 0;
-    for y in 0..qr.grid_size {
-        for x in 0..qr.grid_size {
-            if read_cell(q, index, x, y) > 0 {
-                (*code).cell_bitmap[(i >> 3) as usize] =
-                    ((*code).cell_bitmap[(i >> 3) as usize] as i32 | 1 << (i & 7)) as u8
+        let mut i = 0;
+        for y in 0..qr.grid_size {
+            for x in 0..qr.grid_size {
+                if read_cell(self, index, x, y) > 0 {
+                    code.cell_bitmap[(i >> 3) as usize] =
+                        (code.cell_bitmap[(i >> 3) as usize] as i32 | 1 << (i & 7)) as u8
+                }
+                i += 1;
             }
-            i += 1;
         }
     }
 }

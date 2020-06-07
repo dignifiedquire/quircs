@@ -72,11 +72,9 @@ fn load_png(dec: &mut Quirc, path: &PathBuf) -> i32 {
     let width = img.width() as usize;
     let height = img.height() as usize;
 
-    unsafe {
-        assert!(quirc_resize(dec, width, height) > -1);
-    }
+    dec.resize(width, height);
 
-    let image_ptr = unsafe { quirc_begin(dec, &mut 0, &mut 0) };
+    let image_ptr = dec.begin(&mut 0, &mut 0);
     // copy image to the ptr
     for (x, y, px) in img.enumerate_pixels() {
         unsafe {
@@ -110,7 +108,7 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
     }
 
     let start = Instant::now();
-    unsafe { quirc_end(decoder) };
+    decoder.end();
     (*info).identify_time = start.elapsed().as_millis();
     (*info).id_count = decoder.count();
 
@@ -121,7 +119,7 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
             cell_bitmap: [0; 3917],
         };
         let mut data = Data::default();
-        unsafe { quirc_extract(decoder, i, &mut code) };
+        decoder.extract(i, &mut code);
         if quirc_decode(&mut code, &mut data) as u64 == 0 {
             (*info).decode_count += 1
         }
@@ -146,9 +144,7 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
                 size: 0,
                 cell_bitmap: [0; 3917],
             };
-            unsafe {
-                quirc_extract(decoder, i, &mut code_0);
-            }
+            decoder.extract(i, &mut code_0);
             if opts.cell_dump {
                 dump_cells(&mut code_0);
                 println!();
@@ -186,8 +182,7 @@ fn run_tests(opts: &Opts, paths: &[String]) -> i32 {
         total_time: 0,
     };
     let mut count: i32 = 0;
-    let decoder = unsafe { quirc_new() };
-    assert!(!decoder.is_null(), "quirc_new");
+    let mut decoder = Quirc::new();
 
     println!("  {:30}  {:^17} {:^11}", "", "Time (ms)", "Count");
     println!(
@@ -205,7 +200,7 @@ fn run_tests(opts: &Opts, paths: &[String]) -> i32 {
             identify_time: 0,
             total_time: 0,
         };
-        if test_scan(unsafe { &mut *decoder }, opts, path, &mut info) > 0 {
+        if test_scan(&mut decoder, opts, path, &mut info) > 0 {
             add_result(&mut sum, &mut info);
             count += 1
         }
@@ -213,9 +208,7 @@ fn run_tests(opts: &Opts, paths: &[String]) -> i32 {
     if count > 1 {
         print_result("TOTAL", &mut sum);
     }
-    unsafe {
-        quirc_destroy(decoder);
-    }
+
     0
 }
 
@@ -262,7 +255,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     println!("quirc test program");
-    println!("Library version: {}\n", quirc_version());
+    println!("Library version: {}\n", version());
 
     let opts = Opts {
         verbose: true,

@@ -15,6 +15,8 @@ pub struct Quirc {
 }
 
 impl Quirc {
+    /// Construct a new QR-code recognizer. This function will return NULL
+    /// if sufficient memory could not be allocated.
     pub fn new() -> Self {
         Self::default()
     }
@@ -164,28 +166,8 @@ impl Default for Data {
 }
 
 /// Obtain the library version string.
-pub fn quirc_version() -> &'static str {
+pub fn version() -> &'static str {
     "1.0"
-}
-
-/// Construct a new QR-code recognizer. This function will return NULL
-/// if sufficient memory could not be allocated.
-pub unsafe fn quirc_new() -> *mut Quirc {
-    Box::into_raw(Box::new(Quirc::new()))
-}
-
-/// Destroy a QR-code recognizer.
-pub unsafe fn quirc_destroy(q: *mut Quirc) {
-    let _q = Box::from_raw(q);
-}
-
-/// Resize the QR-code recognizer. The size of an image must be
-/// specified before codes can be analyzed.
-///
-/// This function returns 0 on success, or -1 if sufficient memory could  not be allocated.
-pub unsafe fn quirc_resize(q: *mut Quirc, w: usize, h: usize) -> i32 {
-    (*q).resize(w, h);
-    0
 }
 
 /// QR-code ECC types.
