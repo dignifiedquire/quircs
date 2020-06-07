@@ -2,8 +2,16 @@
 name = "quircs"
 authors = ["dignifiedquire <me@dignifiedquire.com>"]
 version = "0.1.0"
-edition = "2018"
 license = "MIT"
+documentation = "https://docs.rs/qurics/"
+repository = "https://github.com/dignifiedquire/quircs"
+homepage = "https://github.com/dignifiedquire/quircs"
+description = "QR code detection and scanning. Pure Rust."
+readme = "README.md"
+edition = "2018"
+
+keywords = ["qr", "scanner"]
+categories = ["encodings", "images"]
 
 [lib]
 crate-type = ["staticlib", "rlib"]
