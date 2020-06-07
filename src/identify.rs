@@ -456,18 +456,17 @@ fn record_capstone(
     perspective_map(&capstone.c, 3.5, 3.5, &mut capstone.center);
 }
 
-unsafe fn test_capstone(q: *mut Quirc, x: i32, y: usize, pb: &[i32]) {
-    let mut image = ImageMut::from(&mut *q);
-    let regions = &mut (*q).regions;
-
-    let ring_right = region_code(&mut image, regions, x - pb[4], y);
-    let stone = region_code(&mut image, regions, x - pb[4] - pb[3] - pb[2], y);
-    let ring_left = region_code(
-        &mut image,
-        regions,
-        x - pb[4] - pb[3] - pb[2] - pb[1] - pb[0],
-        y,
-    );
+fn test_capstone(
+    image: &mut ImageMut<'_>,
+    regions: &mut Vec<Region>,
+    capstones: &mut Vec<Capstone>,
+    x: i32,
+    y: usize,
+    pb: &[i32],
+) {
+    let ring_right = region_code(image, regions, x - pb[4], y);
+    let stone = region_code(image, regions, x - pb[4] - pb[3] - pb[2], y);
+    let ring_left = region_code(image, regions, x - pb[4] - pb[3] - pb[2] - pb[1] - pb[0], y);
     if ring_left < 0 || ring_right < 0 || stone < 0 {
         return;
     }
@@ -479,8 +478,8 @@ unsafe fn test_capstone(q: *mut Quirc, x: i32, y: usize, pb: &[i32]) {
     if ring_left == stone {
         return;
     }
-    let stone_reg = &mut (*q).regions[stone as usize];
-    let ring_reg = &mut (*q).regions[ring_left as usize];
+    let stone_reg = &regions[stone as usize];
+    let ring_reg = &regions[ring_left as usize];
 
     /* Already detected */
     if stone_reg.capstone >= 0 || ring_reg.capstone >= 0 {
@@ -492,10 +491,7 @@ unsafe fn test_capstone(q: *mut Quirc, x: i32, y: usize, pb: &[i32]) {
         return;
     }
 
-    let mut image = ImageMut::from(&mut *q);
-    let capstones = &mut (*q).capstones;
-
-    record_capstone(&mut image, regions, capstones, ring_left as Pixel, stone);
+    record_capstone(image, regions, capstones, ring_left as Pixel, stone);
 }
 
 unsafe fn finder_scan(q: *mut Quirc, y: usize) {
