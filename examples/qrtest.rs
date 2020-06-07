@@ -22,43 +22,39 @@ fn print_result(name: &str, info: &mut ResultInfo) {
     print!(
         "{}: {} files, {} codes, {} decoded ({} failures)",
         name,
-        (*info).file_count,
-        (*info).id_count,
-        (*info).decode_count,
-        (*info).id_count - (*info).decode_count,
+        info.file_count,
+        info.id_count,
+        info.decode_count,
+        info.id_count - info.decode_count,
     );
-    if (*info).id_count != 0 {
+    if info.id_count != 0 {
         print!(
             ", {}% success rate",
-            ((*info).decode_count * 100 + (*info).id_count / 2) / (*info).id_count,
+            (info.decode_count * 100 + info.id_count / 2) / info.id_count,
         );
     }
     println!();
     println!(
         "Total time [load: {}, identify: {}, total: {}]",
-        (*info).load_time,
-        (*info).identify_time,
-        (*info).total_time,
+        info.load_time, info.identify_time, info.total_time,
     );
-    if (*info).file_count != 0 {
+    if info.file_count != 0 {
         println!(
             "Average time [load: {}, identify: {}, total: {}]",
-            (*info).load_time.wrapping_div((*info).file_count as u128),
-            (*info)
-                .identify_time
-                .wrapping_div((*info).file_count as u128),
-            (*info).total_time.wrapping_div((*info).file_count as u128),
+            info.load_time.wrapping_div(info.file_count as u128),
+            info.identify_time.wrapping_div(info.file_count as u128),
+            info.total_time.wrapping_div(info.file_count as u128),
         );
     }
 }
 
 fn add_result(mut sum: &mut ResultInfo, inf: &mut ResultInfo) {
-    (*sum).file_count += (*inf).file_count;
-    (*sum).id_count += (*inf).id_count;
-    (*sum).decode_count += (*inf).decode_count;
-    (*sum).load_time = (*sum).load_time.wrapping_add((*inf).load_time);
-    (*sum).identify_time = (*sum).identify_time.wrapping_add((*inf).identify_time);
-    (*sum).total_time = (*sum).total_time.wrapping_add((*inf).total_time);
+    sum.file_count += inf.file_count;
+    sum.id_count += inf.id_count;
+    sum.decode_count += inf.decode_count;
+    sum.load_time = sum.load_time.wrapping_add(inf.load_time);
+    sum.identify_time = sum.identify_time.wrapping_add(inf.identify_time);
+    sum.total_time = sum.total_time.wrapping_add(inf.total_time);
 }
 
 fn load_jpeg(_dec: &mut Quirc, _path: &PathBuf) -> Vec<u8> {
@@ -92,14 +88,14 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
     } else {
         panic!("unsupported extension: {:?}", path.extension());
     };
-    (*info).load_time = start.elapsed().as_millis();
+    info.load_time = start.elapsed().as_millis();
 
     let start = Instant::now();
     decoder.identify(&raw_image);
-    (*info).identify_time = start.elapsed().as_millis();
-    (*info).id_count = decoder.count();
+    info.identify_time = start.elapsed().as_millis();
+    info.id_count = decoder.count();
 
-    for i in 0..(*info).id_count as usize {
+    for i in 0..info.id_count as usize {
         let mut code: Code = Code {
             corners: [Point { x: 0, y: 0 }; 4],
             size: 0,
@@ -108,24 +104,24 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
         let mut data = Data::default();
         decoder.extract(i, &mut code);
         if quirc_decode(&mut code, &mut data).is_ok() {
-            (*info).decode_count += 1
+            info.decode_count += 1
         }
     }
 
-    (*info).total_time = total_start.elapsed().as_millis();
+    info.total_time = total_start.elapsed().as_millis();
 
     println!(
         "  {:<30}  {:<5} {:<5} {:<5} {:<5} {:<5}",
         path.file_name().unwrap().to_string_lossy(),
-        (*info).load_time,
-        (*info).identify_time,
-        (*info).total_time,
-        (*info).id_count,
-        (*info).decode_count,
+        info.load_time,
+        info.identify_time,
+        info.total_time,
+        info.id_count,
+        info.decode_count,
     );
 
     if opts.cell_dump || opts.verbose {
-        for i in 0..(*info).id_count {
+        for i in 0..info.id_count {
             let mut code_0 = Code {
                 corners: [Point { x: 0, y: 0 }; 4],
                 size: 0,
@@ -150,7 +146,7 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
         }
     }
 
-    (*info).file_count = 1;
+    info.file_count = 1;
     return 1;
 }
 
