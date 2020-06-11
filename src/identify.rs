@@ -808,6 +808,8 @@ fn fitness_capstone(qr: &Grid, image: &Image<'_>, mut x: i32, mut y: i32) -> i32
         + fitness_ring(qr, image, x, y, 3)
 }
 
+const MAX_ALIGNMENT: usize = 7;
+
 /// Compute a fitness score for the currently configured perspective
 /// transform, using the features we expect to find by scanning the
 /// grid.
@@ -827,14 +829,18 @@ fn fitness_all(qr: &Grid, image: &Image<'_>) -> i32 {
     score += fitness_capstone(qr, &image, 0, 0);
     score += fitness_capstone(qr, &image, qr.grid_size - 7, 0);
     score += fitness_capstone(qr, &image, 0, qr.grid_size - 7);
-    if version < 0 || version > 40 {
+    if version < 0 || version > VERSION_MAX as i32 {
         return score;
     }
 
     /* Check alignment patterns */
     let mut ap_count = 0;
-    while ap_count < 7 && info.apat[ap_count] != 0 {
+    while ap_count < MAX_ALIGNMENT && info.apat[ap_count] != 0 {
         ap_count += 1;
+    }
+
+    if ap_count == 0 {
+        return score;
     }
 
     for x in &info.apat[1..ap_count - 1] {
