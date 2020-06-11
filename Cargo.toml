@@ -1,7 +1,7 @@
 [package]
 name = "quircs"
 authors = ["dignifiedquire <me@dignifiedquire.com>"]
-version = "0.9.0"
+version = "0.9.1"
 license = "MIT"
 documentation = "https://docs.rs/qurics/"
 repository = "https://github.com/dignifiedquire/quircs"
