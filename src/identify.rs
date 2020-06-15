@@ -1187,7 +1187,7 @@ impl Quirc {
     /// These functions are used to process images for QR-code recognition.
     /// The locations and content of each
     /// code may be obtained using accessor functions described below.
-    pub fn identify(&mut self, width: usize, height: usize, image: &[u8]) {
+    pub fn identify<'a>(&'a mut self, width: usize, height: usize, image: &[u8]) -> CodeIter<'a> {
         self.resize(width, height);
 
         assert_eq!(
@@ -1196,12 +1196,9 @@ impl Quirc {
             "image must be exactly of the size width * height"
         );
 
-        self.regions.clear();
+        self.reset();
         self.regions.push(Default::default());
         self.regions.push(Default::default());
-
-        self.capstones.clear();
-        self.grids.clear();
 
         let threshold = otsu(self, image);
         pixels_setup(self, image, threshold);
@@ -1222,10 +1219,15 @@ impl Quirc {
         for i in 0..capstones.len() {
             test_grouping(&mut image, regions, capstones, grids, i);
         }
+
+        CodeIter {
+            quirc: self,
+            current: 0,
+        }
     }
 
     /// Extract the QR-code specified by the given index.
-    pub fn extract(&self, index: usize) -> Result<Code, ExtractError> {
+    fn extract(&self, index: usize) -> Result<Code, ExtractError> {
         let qr = self.grids[index];
         if index > self.count() {
             return Err(ExtractError::OutOfBounds);
@@ -1256,5 +1258,25 @@ impl Quirc {
         }
 
         Ok(code)
+    }
+}
+
+pub struct CodeIter<'a> {
+    quirc: &'a Quirc,
+    current: usize,
+}
+
+impl Iterator for CodeIter<'_> {
+    type Item = Result<Code, ExtractError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current >= self.quirc.count() {
+            return None;
+        }
+
+        let res = self.quirc.extract(self.current);
+        self.current += 1;
+
+        Some(res)
     }
 }

@@ -41,11 +41,13 @@ fn two_qr_codes_small(ext: &str) {
         .unwrap()
         .into_luma();
 
-    q.identify(image.width() as usize, image.height() as usize, &image);
-    assert_eq!(q.count(), 2);
+    let res: Vec<_> = q
+        .identify(image.width() as usize, image.height() as usize, &image)
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(res.len(), 2);
 
-    let first = q.extract(0).unwrap();
-    let data = first.decode().unwrap();
+    let data = res[0].decode().unwrap();
     assert_eq!(data.version, 1);
     assert_eq!(data.ecc_level, quircs::EccLevel::H);
     assert_eq!(data.mask, 1);
@@ -53,8 +55,7 @@ fn two_qr_codes_small(ext: &str) {
     assert_eq!(data.eci, Some(quircs::Eci::Utf8));
     assert_eq!(data.payload, b"Hello");
 
-    let second = q.extract(1).unwrap();
-    let data = second.decode().unwrap();
+    let data = res[1].decode().unwrap();
     assert_eq!(data.version, 1);
     assert_eq!(data.ecc_level, quircs::EccLevel::H);
     assert_eq!(data.mask, 3);
@@ -79,11 +80,13 @@ fn two_qr_codes_large(ext: &str) {
         .unwrap()
         .into_luma();
 
-    q.identify(image.width() as usize, image.height() as usize, &image);
-    assert_eq!(q.count(), 2);
+    let res: Vec<_> = q
+        .identify(image.width() as usize, image.height() as usize, &image)
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(res.len(), 2);
 
-    let first = q.extract(0).unwrap();
-    let data = first.decode().unwrap();
+    let data = res[0].decode().unwrap();
     assert_eq!(data.version, 4);
     assert_eq!(data.ecc_level, quircs::EccLevel::M);
     assert_eq!(data.mask, 2);
@@ -91,8 +94,7 @@ fn two_qr_codes_large(ext: &str) {
     assert_eq!(data.eci, None);
     assert_eq!(data.payload, b"from javascript");
 
-    let second = q.extract(1).unwrap();
-    let data = second.decode().unwrap();
+    let data = res[1].decode().unwrap();
     assert_eq!(data.version, 4);
     assert_eq!(data.ecc_level, quircs::EccLevel::M);
     assert_eq!(data.mask, 2);
@@ -154,11 +156,13 @@ fn generated_png() {
                     .expect("failed to open image")
                     .into_luma();
 
-                q.identify(image.width() as usize, image.height() as usize, &image);
-                assert_eq!(q.count(), 1);
+                let res: Vec<_> = q
+                    .identify(image.width() as usize, image.height() as usize, &image)
+                    .collect::<Result<_, _>>()
+                    .unwrap();
+                assert_eq!(res.len(), 1);
 
-                let first = q.extract(0).expect("failed to extract");
-                let data = first.decode().expect("failed to decode");
+                let data = res[0].decode().expect("failed to decode");
                 assert_eq!(data.version, version);
                 assert_eq!(data.ecc_level, *ecc_level);
                 assert_eq!(data.data_type, Some(*mode));

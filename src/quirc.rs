@@ -64,7 +64,6 @@ impl Quirc {
         self.regions.clear();
         self.capstones.clear();
         self.grids.clear();
-        self.pixels.clear();
     }
 }
 

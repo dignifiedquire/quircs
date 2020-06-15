@@ -72,14 +72,15 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
 
     let start = Instant::now();
 
-    decoder.identify(img.width() as usize, img.height() as usize, &img);
+    let res: Vec<_> = decoder
+        .identify(img.width() as usize, img.height() as usize, &img)
+        .collect::<Result<_, _>>()
+        .unwrap();
 
     info.identify_time = start.elapsed().as_millis();
     info.id_count = decoder.count();
 
-    for i in 0..info.id_count as usize {
-        let code = decoder.extract(i).unwrap();
-
+    for code in &res {
         if code.decode().is_ok() {
             info.decode_count += 1
         }
@@ -98,8 +99,7 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
     );
 
     if opts.cell_dump || opts.verbose {
-        for i in 0..info.id_count {
-            let code = decoder.extract(i).unwrap();
+        for code in &res {
             if opts.cell_dump {
                 dump_cells(&code);
                 println!();
