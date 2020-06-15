@@ -88,7 +88,7 @@ fn two_qr_codes_large(ext: &str) {
     assert_eq!(data.ecc_level, quircs::EccLevel::M);
     assert_eq!(data.mask, 2);
     assert_eq!(data.data_type, Some(quircs::DataType::Byte));
-    assert_eq!(data.eci, Some(quircs::Eci::Utf8));
+    assert_eq!(data.eci, None);
     assert_eq!(data.payload, b"from javascript");
 
     let second = q.extract(1).unwrap();
@@ -97,16 +97,17 @@ fn two_qr_codes_large(ext: &str) {
     assert_eq!(data.ecc_level, quircs::EccLevel::M);
     assert_eq!(data.mask, 2);
     assert_eq!(data.data_type, Some(quircs::DataType::Byte));
-    assert_eq!(data.eci, Some(quircs::Eci::Utf8));
+    assert_eq!(data.eci, None);
     assert_eq!(data.payload, b"here comes qr!");
 }
 
 #[test]
 fn generated_png() {
-    let mut q = Quirc::default();
     use quircs::{DataType, EccLevel};
     use std::collections::HashMap;
     use std::path::PathBuf;
+
+    let mut q = Quirc::default();
 
     let mut mode_to_data: HashMap<DataType, &'static [u8]> = HashMap::new();
     mode_to_data.insert(DataType::Numeric, b"42");
@@ -158,7 +159,7 @@ fn generated_png() {
 
                 let first = q.extract(0).expect("failed to extract");
                 let data = first.decode().expect("failed to decode");
-                assert_eq!(data.version, version as i32);
+                assert_eq!(data.version, version);
                 assert_eq!(data.ecc_level, *ecc_level);
                 assert_eq!(data.data_type, Some(*mode));
                 assert_eq!(

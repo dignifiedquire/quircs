@@ -1,5 +1,7 @@
 #![allow(clippy::many_single_char_names)]
 
+use std::convert::TryFrom;
+
 use crate::error::ExtractError;
 use crate::quirc::*;
 use crate::version_db::*;
@@ -809,8 +811,8 @@ const MAX_ALIGNMENT: usize = 7;
 /// transform, using the features we expect to find by scanning the
 /// grid.
 fn fitness_all(qr: &Grid, image: &Image<'_>) -> i32 {
-    let version = (qr.grid_size - 17) / 4;
-    let info = &VERSION_DB[version as usize];
+    let version = usize::try_from((qr.grid_size - 17) / 4).expect("invalid version");
+    let info = &VERSION_DB[version];
     let mut score: i32 = 0;
 
     /* Check the timing pattern */
@@ -824,7 +826,7 @@ fn fitness_all(qr: &Grid, image: &Image<'_>) -> i32 {
     score += fitness_capstone(qr, &image, 0, 0);
     score += fitness_capstone(qr, &image, qr.grid_size - 7, 0);
     score += fitness_capstone(qr, &image, 0, qr.grid_size - 7);
-    if version < 0 || version > VERSION_MAX as i32 {
+    if version > VERSION_MAX {
         return score;
     }
 
@@ -1194,6 +1196,7 @@ impl Quirc {
             "image must be exactly of the size width * height"
         );
 
+        self.regions.clear();
         self.regions.push(Default::default());
         self.regions.push(Default::default());
 

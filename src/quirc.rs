@@ -58,6 +58,14 @@ impl Quirc {
     pub fn count(&self) -> usize {
         self.grids.len()
     }
+
+    /// Resets all internal state.
+    pub fn reset(&mut self) {
+        self.regions.clear();
+        self.capstones.clear();
+        self.grids.clear();
+        self.pixels.clear();
+    }
 }
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -146,7 +154,7 @@ impl Code {
 pub struct Data {
     ///  Various parameters of the QR-code. These can mostly be  ignored
     /// if you only care about the data.
-    pub version: i32,
+    pub version: usize,
     pub ecc_level: EccLevel,
     pub mask: i32,
     /// This field is the highest-valued data type found in the QR code.

@@ -1,6 +1,7 @@
 #![allow(clippy::many_single_char_names)]
 
 use num_traits::{FromPrimitive, ToPrimitive};
+use std::convert::TryFrom;
 
 use crate::quirc::*;
 use crate::version_db::*;
@@ -359,9 +360,9 @@ fn mask_bit(mask: i32, i: i32, j: i32) -> i32 {
     }
 }
 
-fn reserved_cell(version: i32, i: i32, j: i32) -> i32 {
-    let ver = &VERSION_DB[version as usize];
-    let size: i32 = version * 4 + 17;
+fn reserved_cell(version: usize, i: i32, j: i32) -> i32 {
+    let ver = &VERSION_DB[version];
+    let size = version as i32 * 4 + 17;
     let mut ai: i32 = -1;
     let mut aj: i32 = -1;
     /* Finder + format: top left */
@@ -714,9 +715,9 @@ impl Code {
         }
 
         let mut data = Data::default();
-
-        data.version = (self.size - 17) / 4;
-        if data.version < 1 || data.version > 40 {
+        data.version =
+            usize::try_from((self.size - 17) / 4).map_err(|_| DecodeError::InvalidVersion)?;
+        if data.version < VERSION_MIN || data.version > VERSION_MAX {
             return Err(DecodeError::InvalidVersion);
         }
 
