@@ -26,8 +26,7 @@ impl Default for Quirc {
 }
 
 impl Quirc {
-    /// Construct a new QR-code recognizer. This function will return NULL
-    /// if sufficient memory could not be allocated.
+    /// Construct a new QR-code recognizer.
     pub fn new() -> Self {
         Self::default()
     }
@@ -37,6 +36,10 @@ impl Quirc {
     ///
     /// This function returns 0 on success, or -1 if sufficient memory could  not be allocated.
     pub fn resize(&mut self, width: usize, height: usize) {
+        if self.w == width && self.h == height {
+            return;
+        }
+
         let newdim = width * height;
         self.pixels.resize(newdim, 0);
         self.w = width;
@@ -139,7 +142,7 @@ impl Code {
 }
 
 /// This structure holds the decoded QR-code data
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct Data {
     ///  Various parameters of the QR-code. These can mostly be  ignored
     /// if you only care about the data.
@@ -147,11 +150,10 @@ pub struct Data {
     pub ecc_level: EccLevel,
     pub mask: i32,
     /// This field is the highest-valued data type found in the QR code.
-    pub data_type: i32,
+    pub data_type: Option<DataType>,
     /// Data payload. For the Kanji datatype, payload is encoded as Shift-JIS.
     /// For all other datatypes, payload is ASCII text.
-    pub payload: [u8; 8896],
-    pub payload_len: i32,
+    pub payload: Vec<u8>,
     /// ECI assignment number
     pub eci: Option<Eci>,
 }
@@ -162,9 +164,8 @@ impl Default for Data {
             version: 0,
             ecc_level: Default::default(),
             mask: 0,
-            data_type: 0,
-            payload: [0; 8896],
-            payload_len: 0,
+            data_type: None,
+            payload: Vec::new(),
             eci: Default::default(),
         }
     }
@@ -176,7 +177,7 @@ pub fn version() -> String {
 }
 
 /// QR-code ECC types.
-#[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive)]
+#[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive, PartialEq, Eq, Hash)]
 pub enum EccLevel {
     M = 0,
     L = 1,
@@ -191,16 +192,31 @@ impl Default for EccLevel {
 }
 
 /// QR-code data types.
-#[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive)]
+#[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive, PartialEq, Eq, Hash)]
+#[repr(i32)]
 pub enum DataType {
     Numeric = 1,
     Alpha = 2,
     Byte = 4,
+    Eci = 7,
     Kanji = 8,
 }
 
+impl std::fmt::Display for DataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let x = match self {
+            DataType::Numeric => "numeric",
+            DataType::Alpha => "alpha",
+            DataType::Byte => "byte",
+            DataType::Eci => "eci",
+            DataType::Kanji => "kanji",
+        };
+        f.write_str(x)
+    }
+}
+
 /// Common character encodings
-#[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive)]
+#[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive, PartialEq, Eq, Hash)]
 pub enum Eci {
     Iso8859_1 = 1,
     Ibm437 = 2,

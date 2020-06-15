@@ -12,6 +12,7 @@ edition = "2018"
 
 keywords = ["qr", "scanner"]
 categories = ["encoding", "multimedia"]
+exclude = ["tests"]
 
 [lib]
 crate-type = ["staticlib", "rlib"]

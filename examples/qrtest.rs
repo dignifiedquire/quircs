@@ -68,13 +68,11 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
         .expect("failed to open image")
         .into_luma();
 
-    decoder.resize(img.width() as usize, img.height() as usize);
-
     info.load_time = start.elapsed().as_millis();
 
     let start = Instant::now();
 
-    decoder.identify(&img);
+    decoder.identify(img.width() as usize, img.height() as usize, &img);
 
     info.identify_time = start.elapsed().as_millis();
     info.id_count = decoder.count();
@@ -171,17 +169,12 @@ fn run_tests(opts: &Opts, paths: &[String]) -> i32 {
 }
 
 fn dump_data(data: &Data) {
-    let data = *data;
-
     println!("    Version: {}", data.version);
     println!("    ECC level: {:?}", data.ecc_level);
     println!("    Mask: {}", data.mask);
-    println!("    Data type: {:?}", data.data_type,);
-    println!("    Length: {}", data.payload_len);
-    println!(
-        "    Payload: {:?}",
-        std::str::from_utf8(&data.payload[..data.payload_len as usize])
-    );
+    println!("    Data type: {:?}", data.data_type);
+    println!("    Length: {}", data.payload.len());
+    println!("    Payload: {:?}", std::str::from_utf8(&data.payload));
     println!("    ECI: {:?}", data.eci);
 }
 

@@ -1,7 +1,5 @@
 #![allow(clippy::many_single_char_names)]
 
-use std::cell::RefCell;
-
 use crate::error::ExtractError;
 use crate::quirc::*;
 use crate::version_db::*;
@@ -115,15 +113,15 @@ fn perspective_unmap(c: &[f64; 8], in_0: &Point, u: &mut f64, v: &mut f64) {
 const FLOOD_FILL_MAX_DEPTH: usize = 4096;
 
 enum UserData<'a> {
-    Region(RefCell<&'a mut Region>),
-    Polygon(RefCell<&'a mut PolygonScoreData<'a>>),
+    Region(&'a mut Region),
+    Polygon(&'a mut PolygonScoreData<'a>),
     None,
 }
 
 impl<'a> UserData<'a> {
     fn into_polygon(self) -> &'a mut PolygonScoreData<'a> {
         match self {
-            UserData::Polygon(poly) => poly.into_inner(),
+            UserData::Polygon(poly) => poly,
             _ => panic!("invalid user data"),
         }
     }
@@ -155,10 +153,10 @@ fn flood_fill_seed<F>(
     from: Pixel,
     to: Pixel,
     func: Option<&F>,
-    user_data: &UserData<'_>,
+    user_data: &mut UserData<'_>,
     depth: usize,
 ) where
-    F: Fn(&UserData<'_>, usize, i32, i32),
+    F: Fn(&mut UserData<'_>, usize, i32, i32),
 {
     if depth >= FLOOD_FILL_MAX_DEPTH {
         return;
@@ -265,9 +263,9 @@ fn otsu(q: &Quirc, image: &[u8]) -> u8 {
     threshold
 }
 
-fn area_count(user_data: &UserData<'_>, _y: usize, left: i32, right: i32) {
-    if let UserData::Region(ref region) = user_data {
-        region.borrow_mut().count += right - left + 1;
+fn area_count(user_data: &mut UserData<'_>, _y: usize, left: i32, right: i32) {
+    if let UserData::Region(ref mut region) = user_data {
+        region.count += right - left + 1;
     } else {
         panic!("invalid user data");
     }
@@ -303,16 +301,15 @@ fn region_code(image: &mut ImageMut<'_>, regions: &mut Vec<Region>, x: i32, y: u
         pixel,
         region as Pixel,
         Some(&area_count),
-        &UserData::Region(RefCell::new(&mut regions[region as usize])),
+        &mut UserData::Region(&mut regions[region as usize]),
         0,
     );
 
     region
 }
 
-fn find_one_corner(user_data: &UserData<'_>, y: usize, left: i32, right: i32) {
-    if let UserData::Polygon(ref psd) = user_data {
-        let mut psd = psd.borrow_mut();
+fn find_one_corner(user_data: &mut UserData<'_>, y: usize, left: i32, right: i32) {
+    if let UserData::Polygon(ref mut psd) = user_data {
         let xs: [i32; 2] = [left, right];
         let dy = y as i32 - psd.ref_0.y;
 
@@ -330,9 +327,8 @@ fn find_one_corner(user_data: &UserData<'_>, y: usize, left: i32, right: i32) {
     }
 }
 
-fn find_other_corners(user_data: &UserData<'_>, y: usize, left: i32, right: i32) {
-    if let UserData::Polygon(ref psd) = user_data {
-        let mut psd = psd.borrow_mut();
+fn find_other_corners(user_data: &mut UserData<'_>, y: usize, left: i32, right: i32) {
+    if let UserData::Polygon(ref mut psd) = user_data {
         let xs: [i32; 2] = [left, right];
 
         for x in &xs {
@@ -365,7 +361,7 @@ fn find_region_corners(
         scores: [-1, 0, 0, 0],
         corners,
     };
-    let psd_ref = UserData::Polygon(RefCell::new(&mut psd));
+    let mut psd_ref = UserData::Polygon(&mut psd);
 
     flood_fill_seed(
         image,
@@ -374,7 +370,7 @@ fn find_region_corners(
         rcode,
         1,
         Some(&find_one_corner),
-        &psd_ref,
+        &mut psd_ref,
         0,
     );
     let mut psd = psd_ref.into_polygon();
@@ -402,7 +398,7 @@ fn find_region_corners(
         1,
         rcode,
         Some(&find_other_corners),
-        &UserData::Polygon(RefCell::new(&mut psd)),
+        &mut UserData::Polygon(&mut psd),
         0,
     );
 }
@@ -582,9 +578,8 @@ fn find_alignment_pattern(
     }
 }
 
-fn find_leftmost_to_line(user_data: &UserData<'_>, y: usize, left: i32, right: i32) {
-    if let UserData::Polygon(ref psd) = user_data {
-        let mut psd = psd.borrow_mut();
+fn find_leftmost_to_line(user_data: &mut UserData<'_>, y: usize, left: i32, right: i32) {
+    if let UserData::Polygon(ref mut psd) = user_data {
         let xs: [i32; 2] = [left, right];
 
         for x in &xs {
@@ -1021,14 +1016,14 @@ fn record_qr_grid(
                     };
                     psd.scores[0] = -hd.y * qr.align.x + hd.x * qr.align.y;
 
-                    flood_fill_seed::<fn(&UserData<'_>, usize, i32, i32) -> ()>(
+                    flood_fill_seed::<fn(&mut UserData<'_>, usize, i32, i32) -> ()>(
                         image,
                         reg.seed.x,
                         reg.seed.y as usize,
                         align_region,
                         1,
                         None,
-                        &UserData::None,
+                        &mut UserData::None,
                         0,
                     );
                     flood_fill_seed(
@@ -1038,7 +1033,7 @@ fn record_qr_grid(
                         1,
                         align_region,
                         Some(&find_leftmost_to_line),
-                        &UserData::Polygon(RefCell::new(&mut psd)),
+                        &mut UserData::Polygon(&mut psd),
                         0,
                     );
                     qr.align = corners[0];
@@ -1190,7 +1185,9 @@ impl Quirc {
     /// These functions are used to process images for QR-code recognition.
     /// The locations and content of each
     /// code may be obtained using accessor functions described below.
-    pub fn identify(&mut self, image: &[u8]) {
+    pub fn identify(&mut self, width: usize, height: usize, image: &[u8]) {
+        self.resize(width, height);
+
         assert_eq!(
             self.w * self.h,
             image.len(),

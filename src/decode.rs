@@ -509,18 +509,18 @@ fn take_bits(mut ds: &mut Datastream, mut len: i32) -> i32 {
     ret
 }
 
-fn numeric_tuple(mut data: &mut Data, ds: &mut Datastream, bits: i32, digits: i32) -> i32 {
+fn numeric_tuple(data: &mut Data, ds: &mut Datastream, bits: i32, digits: usize) -> i32 {
     if bits_remaining(ds) < bits {
         return -1;
     }
     let mut tuple = take_bits(ds, bits);
-    let mut i = digits - 1;
-    while i >= 0 {
-        data.payload[(data.payload_len + i) as usize] = (tuple % 10 + '0' as i32) as u8;
+    let len = data.payload.len();
+    data.payload.resize(len + digits, 0);
+
+    for val in data.payload[len..].iter_mut().rev() {
+        *val = (tuple % 10 + '0' as i32) as u8;
         tuple /= 10;
-        i -= 1
     }
-    data.payload_len += digits;
 
     0
 }
@@ -533,7 +533,7 @@ fn decode_numeric(data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeErro
         bits = 12;
     }
     let mut count = take_bits(ds, bits);
-    if data.payload_len + count + 1 > 8896 {
+    if data.payload.len() + count as usize + 1 > 8896 {
         return Err(DecodeError::DataOverflow);
     }
     while count >= 3 {
@@ -556,19 +556,21 @@ fn decode_numeric(data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeErro
     Ok(())
 }
 
-fn alpha_tuple(mut data: &mut Data, ds: &mut Datastream, bits: i32, digits: i32) -> i32 {
+fn alpha_tuple(data: &mut Data, ds: &mut Datastream, bits: i32, digits: usize) -> i32 {
     if bits_remaining(ds) < bits {
         return -1;
     }
     let mut tuple = take_bits(ds, bits);
     static ALPHA_MAP: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
 
-    for i in 0..digits {
-        data.payload[(data.payload_len + digits - i - 1) as usize] =
-            ALPHA_MAP[(tuple % 45) as usize] as u8;
+    let len = data.payload.len();
+    data.payload.resize(len + digits, 0);
+
+    for val in data.payload[len..].iter_mut().rev() {
+        *val = ALPHA_MAP[(tuple % 45) as usize] as u8;
         tuple /= 45;
     }
-    data.payload_len += digits;
+
     0
 }
 
@@ -580,7 +582,7 @@ fn decode_alpha(data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeError>
         bits = 11
     }
     let mut count = take_bits(ds, bits);
-    if data.payload_len + count + 1 > 8896 {
+    if data.payload.len() + count as usize + 1 > 8896 {
         return Err(DecodeError::DataOverflow);
     }
     while count >= 2 {
@@ -596,10 +598,10 @@ fn decode_alpha(data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeError>
     Ok(())
 }
 
-fn decode_byte(mut data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeError> {
+fn decode_byte(data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeError> {
     let bits = if data.version < 10 { 8 } else { 16 };
     let count = take_bits(ds, bits);
-    if data.payload_len + count + 1 > 8896 {
+    if data.payload.len() + count as usize + 1 > 8896 {
         return Err(DecodeError::DataOverflow);
     }
     if bits_remaining(ds) < count * 8 {
@@ -607,15 +609,13 @@ fn decode_byte(mut data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeErr
     }
 
     for _i in 0..count {
-        let len = data.payload_len;
-        data.payload_len += 1;
-        data.payload[len as usize] = take_bits(ds, 8) as u8;
+        data.payload.push(take_bits(ds, 8) as u8);
     }
 
     Ok(())
 }
 
-fn decode_kanji(mut data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeError> {
+fn decode_kanji(data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeError> {
     let mut bits = 12;
     if data.version < 10 {
         bits = 8;
@@ -624,7 +624,7 @@ fn decode_kanji(mut data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeEr
     }
 
     let count = take_bits(ds, bits);
-    if data.payload_len + count * 2 + 1 > 8896 {
+    if data.payload.len() + count as usize * 2 + 1 > 8896 {
         return Err(DecodeError::DataOverflow);
     }
     if bits_remaining(ds) < count * 13 {
@@ -644,12 +644,8 @@ fn decode_kanji(mut data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeEr
             (intermediate + 0xc140) as u16
         };
 
-        let len = data.payload_len;
-        data.payload_len += 1;
-        data.payload[len as usize] = (sjw as i32 >> 8) as u8;
-        let fresh7 = data.payload_len;
-        data.payload_len += 1;
-        data.payload[fresh7 as usize] = (sjw as i32 & 0xff) as u8;
+        data.payload.push((sjw as i32 >> 8) as u8);
+        data.payload.push((sjw as i32 & 0xff) as u8);
     }
 
     Ok(())
@@ -681,27 +677,24 @@ fn decode_eci(mut data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeErro
 
 fn decode_payload(mut data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeError> {
     while bits_remaining(ds) >= 4 {
-        let type_0 = take_bits(ds, 4);
+        let type_0 = DataType::from_i32(take_bits(ds, 4));
         match type_0 {
-            1 => decode_numeric(data, ds)?,
-            2 => decode_alpha(data, ds)?,
-            4 => decode_byte(data, ds)?,
-            8 => decode_kanji(data, ds)?,
-            7 => decode_eci(data, ds)?,
+            Some(DataType::Numeric) => decode_numeric(data, ds)?,
+            Some(DataType::Alpha) => decode_alpha(data, ds)?,
+            Some(DataType::Byte) => decode_byte(data, ds)?,
+            Some(DataType::Kanji) => decode_kanji(data, ds)?,
+            Some(DataType::Eci) => decode_eci(data, ds)?,
             _ => {
                 break;
             }
         }
 
-        if type_0 & (type_0 - 1) == 0 && type_0 > data.data_type {
-            data.data_type = type_0
+        let t = type_0.map(|t| t as i32).unwrap_or_default();
+        let d = data.data_type.map(|t| t as i32).unwrap_or_default();
+        if t & (t - 1) == 0 && t > d {
+            data.data_type = type_0;
         }
     }
-    /* Add nul terminator to all payloads */
-    if data.payload_len >= ::std::mem::size_of::<[u8; 8896]>() as i32 {
-        data.payload_len -= 1;
-    }
-    data.payload[data.payload_len as usize] = 0;
 
     Ok(())
 }
