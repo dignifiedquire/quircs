@@ -15,7 +15,7 @@ fn empty(ext: &str) {
 
     let empty_image = image::open(&format!("./tests/data/1x1.{}", ext))
         .unwrap()
-        .into_luma();
+        .into_luma8();
 
     q.identify(
         empty_image.width() as usize,
@@ -39,7 +39,7 @@ fn two_qr_codes_small(ext: &str) {
     let mut q = Quirc::default();
     let image = image::open(&format!("./tests/data/Hello+World.{}", ext))
         .unwrap()
-        .into_luma();
+        .into_luma8();
 
     let res: Vec<_> = q
         .identify(image.width() as usize, image.height() as usize, &image)
@@ -78,7 +78,7 @@ fn two_qr_codes_large(ext: &str) {
     let mut q = Quirc::default();
     let image = image::open(&format!("./tests/data/big_image_with_two_qrcodes.{}", ext))
         .unwrap()
-        .into_luma();
+        .into_luma8();
 
     let res: Vec<_> = q
         .identify(image.width() as usize, image.height() as usize, &image)
@@ -154,7 +154,7 @@ fn generated_png() {
 
                 let image = image::open(&filename)
                     .expect("failed to open image")
-                    .into_luma();
+                    .into_luma8();
 
                 let res: Vec<_> = q
                     .identify(image.width() as usize, image.height() as usize, &image)
