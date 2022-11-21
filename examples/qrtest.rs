@@ -66,7 +66,7 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
 
     let img = image::open(&path)
         .expect("failed to open image")
-        .into_luma();
+        .into_luma8();
 
     info.load_time = start.elapsed().as_millis();
 

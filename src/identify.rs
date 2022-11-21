@@ -238,8 +238,8 @@ fn otsu(q: &Quirc, image: &[u8]) -> u8 {
     // Compute threshold
     let mut sum_b: i32 = 0;
     let mut q1: i32 = 0;
-    let mut max: f64 = 0 as f64;
-    let mut threshold: u8 = 0 as u8;
+    let mut max = 0_f64;
+    let mut threshold = 0_u8;
     for (i, val) in histogram.iter().enumerate() {
         // Weighted background
         q1 = (q1 as u32).wrapping_add(*val) as i32 as i32;
@@ -400,7 +400,7 @@ fn find_region_corners(
         1,
         rcode,
         Some(&find_other_corners),
-        &mut UserData::Polygon(&mut psd),
+        &mut UserData::Polygon(psd),
         0,
     );
 }
@@ -417,10 +417,12 @@ fn record_capstone(
     }
     let cs_index = capstones.len() as i32;
 
-    let mut capstone = Capstone::default();
-    capstone.qr_grid = -1;
-    capstone.ring = ring as i32;
-    capstone.stone = stone;
+    let capstone = Capstone {
+        qr_grid: -1,
+        ring: ring as i32,
+        stone,
+        ..Default::default()
+    };
     capstones.push(capstone);
     let capstone = &mut capstones[cs_index as usize];
 
@@ -468,7 +470,7 @@ fn test_capstone(
     }
     /* Ratio should ideally be 37.5 */
     let ratio = stone_reg.count * 100 / ring_reg.count;
-    if ratio < 10 || ratio > 70 {
+    if !(10..=70).contains(&ratio) {
         return;
     }
 
@@ -748,7 +750,7 @@ impl<'a> From<&'a Quirc> for Image<'a> {
 impl<'a> From<&'a ImageMut<'a>> for Image<'a> {
     fn from(img: &'a ImageMut<'a>) -> Self {
         Self {
-            pixels: &img.pixels,
+            pixels: img.pixels,
             width: img.width,
             height: img.height,
         }
@@ -818,14 +820,14 @@ fn fitness_all(qr: &Grid, image: &Image<'_>) -> i32 {
     /* Check the timing pattern */
     for i in 0..qr.grid_size - 14 {
         let expect = if i & 1 != 0 { 1 } else { -1 };
-        score += fitness_cell(qr, &image, i + 7, 6) * expect;
-        score += fitness_cell(qr, &image, 6, i + 7) * expect;
+        score += fitness_cell(qr, image, i + 7, 6) * expect;
+        score += fitness_cell(qr, image, 6, i + 7) * expect;
     }
 
     /* Check capstones */
-    score += fitness_capstone(qr, &image, 0, 0);
-    score += fitness_capstone(qr, &image, qr.grid_size - 7, 0);
-    score += fitness_capstone(qr, &image, 0, qr.grid_size - 7);
+    score += fitness_capstone(qr, image, 0, 0);
+    score += fitness_capstone(qr, image, qr.grid_size - 7, 0);
+    score += fitness_capstone(qr, image, 0, qr.grid_size - 7);
     if version > VERSION_MAX {
         return score;
     }
@@ -841,13 +843,13 @@ fn fitness_all(qr: &Grid, image: &Image<'_>) -> i32 {
     }
 
     for x in &info.apat[1..ap_count - 1] {
-        score += fitness_apat(qr, &image, 6, *x);
-        score += fitness_apat(qr, &image, *x, 6);
+        score += fitness_apat(qr, image, 6, *x);
+        score += fitness_apat(qr, image, *x, 6);
     }
 
     for x in &info.apat[1..ap_count] {
         for y in &info.apat[1..ap_count] {
-            score += fitness_apat(qr, &image, *x, *y);
+            score += fitness_apat(qr, image, *x, *y);
         }
     }
 
@@ -855,7 +857,7 @@ fn fitness_all(qr: &Grid, image: &Image<'_>) -> i32 {
 }
 
 fn jiggle_perspective(qr: &mut Grid, image: &Image<'_>) {
-    let mut best = fitness_all(&qr, &image);
+    let mut best = fitness_all(qr, image);
     let mut adjustments: [f64; 8] = [0.; 8];
 
     for (a_val, c_val) in adjustments.iter_mut().zip(qr.c.iter()) {
@@ -869,7 +871,7 @@ fn jiggle_perspective(qr: &mut Grid, image: &Image<'_>) {
             let step = adjustments[j];
             qr.c[j] = if i & 1 != 0 { old + step } else { old - step };
 
-            let test = fitness_all(&qr, &image);
+            let test = fitness_all(qr, image);
             if test > best {
                 best = test
             } else {
@@ -902,7 +904,7 @@ fn setup_qr_perspective(qr: &mut Grid, capstones: &[Capstone], image: &Image<'_>
         (qr.grid_size - 7) as f64,
     );
 
-    jiggle_perspective(qr, &image);
+    jiggle_perspective(qr, image);
 }
 
 /// Rotate the capstone with so that corner 0 is the leftmost with respect

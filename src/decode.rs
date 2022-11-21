@@ -134,7 +134,6 @@ fn berlekamp_massey(s: &[u8], n: usize, gf: &GaloisField, sigma: &mut [u8]) {
 
     for n in 0..n {
         let mut d = s[n];
-        let mult: u8;
         for i in 1..=L {
             if C[i] as i32 != 0 && s[n - i] as i32 != 0 {
                 let a = gf.log[C[i] as usize] as usize;
@@ -145,7 +144,7 @@ fn berlekamp_massey(s: &[u8], n: usize, gf: &GaloisField, sigma: &mut [u8]) {
             }
         }
 
-        mult = gf.exp
+        let mult = gf.exp
             [((gf.p - gf.log[b as usize] as i32 + gf.log[d as usize] as i32) % gf.p) as usize];
 
         if d == 0 {
@@ -319,7 +318,7 @@ fn grid_bit(code: &Code, x: i32, y: i32) -> i32 {
 }
 
 fn read_format(code: &Code, data: &mut Data, which: i32) -> Result<(), DecodeError> {
-    let mut format: u16 = 0 as u16;
+    let mut format = 0_u16;
     if which != 0 {
         for i in 0..7 {
             format = ((format as i32) << 1 | grid_bit(code, 8, code.size - 1 - i)) as u16;
@@ -657,14 +656,14 @@ fn decode_eci(mut data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeErro
         return Err(DecodeError::DataUnderflow);
     }
     data.eci = Eci::from_u32(take_bits(ds, 8) as u32);
-    if data.eci.and_then(|e| e.to_u32()).unwrap_or_default() & 0xc0 as u32 == 0x80 as u32 {
+    if data.eci.and_then(|e| e.to_u32()).unwrap_or_default() & 0xc0_u32 == 0x80_u32 {
         if bits_remaining(ds) < 8 {
             return Err(DecodeError::DataUnderflow);
         }
         data.eci = Eci::from_u32(
             data.eci.and_then(|e| e.to_u32()).unwrap_or_default() << 8 | take_bits(ds, 8) as u32,
         );
-    } else if data.eci.and_then(|e| e.to_u32()).unwrap_or_default() & 0xe0 as u32 == 0xc0 as u32 {
+    } else if data.eci.and_then(|e| e.to_u32()).unwrap_or_default() & 0xe0_u32 == 0xc0_u32 {
         if bits_remaining(ds) < 16 {
             return Err(DecodeError::DataUnderflow);
         }
@@ -714,9 +713,12 @@ impl Code {
             return Err(DecodeError::InvalidGridSize);
         }
 
-        let mut data = Data::default();
-        data.version =
-            usize::try_from((self.size - 17) / 4).map_err(|_| DecodeError::InvalidVersion)?;
+        let mut data = Data {
+            version: usize::try_from((self.size - 17) / 4)
+                .map_err(|_| DecodeError::InvalidVersion)?,
+            ..Default::default()
+        };
+
         if data.version < VERSION_MIN || data.version > VERSION_MAX {
             return Err(DecodeError::InvalidVersion);
         }

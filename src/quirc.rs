@@ -149,7 +149,7 @@ impl Code {
 }
 
 /// This structure holds the decoded QR-code data
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Data {
     ///  Various parameters of the QR-code. These can mostly be  ignored
     /// if you only care about the data.
@@ -163,19 +163,6 @@ pub struct Data {
     pub payload: Vec<u8>,
     /// ECI assignment number
     pub eci: Option<Eci>,
-}
-
-impl Default for Data {
-    fn default() -> Self {
-        Self {
-            version: 0,
-            ecc_level: Default::default(),
-            mask: 0,
-            data_type: None,
-            payload: Vec::new(),
-            eci: Default::default(),
-        }
-    }
 }
 
 /// Obtain the library version string.
