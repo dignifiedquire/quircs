@@ -157,9 +157,9 @@ fn flood_fill_seed<F>(
 ) where
     F: Fn(&mut UserData<'_>, usize, i32, i32),
 {
-    let mut flood_from = vec![ (starting_x as usize, starting_y) ];
+    let mut flood_from = vec![(starting_x as usize, starting_y)];
 
-    while let Some( (x, y) ) = flood_from.pop() {
+    while let Some((x, y)) = flood_from.pop() {
         let mut left = x;
         let mut right = x;
         let width = image.width;
@@ -188,14 +188,14 @@ fn flood_fill_seed<F>(
             let offset = (y - 1) * width;
             // Two side-by-side pixels do not need two flood fills seeded, since the first flood file will scan to the right and cover the second one.
             // Keeping track of whether the previous pixel matched lets those unnecessary side-by-side flood fills to be skipped.
-            let mut prev_matched = false; 
+            let mut prev_matched = false;
             for i in left..=right {
                 // Safety: pixels is in range, as verified by the assert at the beginning.
                 // Unfortunately this is required, as the compiler will add bounds checks that are quite measurable.
                 let val = unsafe { *image.pixels.get_unchecked(offset + i) };
                 if val == from {
                     if !prev_matched {
-                        flood_from.push( (i, y - 1) );
+                        flood_from.push((i, y - 1));
                         prev_matched = true;
                     }
                 } else {
@@ -214,7 +214,7 @@ fn flood_fill_seed<F>(
                 let val = unsafe { *image.pixels.get_unchecked(offset + i) };
                 if val == from {
                     if !prev_matched {
-                        flood_from.push((i, y+1));
+                        flood_from.push((i, y + 1));
                         prev_matched = true;
                     }
                 } else {
