@@ -270,7 +270,7 @@ fn format_syndromes(u: u16, s: &mut [u8]) -> i32 {
         s[i] = 0;
         for j in 0..15 {
             if u as i32 & 1 << j != 0 {
-                s[i] ^= GF16_EXP[((i + 1) * j % 15)];
+                s[i] ^= GF16_EXP[(i + 1) * j % 15];
             }
         }
 
