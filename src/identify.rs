@@ -112,8 +112,6 @@ fn perspective_unmap(c: &[f64; 8], in_0: &Point, u: &mut f64, v: &mut f64) {
 
 // --- Span-based floodfill routine
 
-const FLOOD_FILL_MAX_DEPTH: usize = 4096;
-
 enum UserData<'a> {
     Region(&'a mut Region),
     Polygon(&'a mut PolygonScoreData<'a>),
@@ -150,67 +148,78 @@ impl<'a> From<&'a mut Quirc> for ImageMut<'a> {
 #[allow(clippy::too_many_arguments)]
 fn flood_fill_seed<F>(
     image: &mut ImageMut<'_>,
-    x: i32,
-    y: usize,
+    starting_x: i32,
+    starting_y: usize,
     from: Pixel,
     to: Pixel,
     func: Option<&F>,
     user_data: &mut UserData<'_>,
-    depth: usize,
 ) where
     F: Fn(&mut UserData<'_>, usize, i32, i32),
 {
-    if depth >= FLOOD_FILL_MAX_DEPTH {
-        return;
-    }
+    let mut flood_from = vec![(starting_x as usize, starting_y)];
 
-    let mut left = x as usize;
-    let mut right = x as usize;
-    let width = image.width;
+    while let Some((x, y)) = flood_from.pop() {
+        let mut left = x;
+        let mut right = x;
+        let width = image.width;
 
-    assert!(image.pixels.len() >= (y + 1) * width);
+        let row = &mut image.pixels[y * width..(y + 1) * width];
+        while left > 0 && row[left - 1] == from {
+            left -= 1;
+        }
+        while right < width - 1 && row[right + 1] == from {
+            right += 1;
+        }
 
-    let row = &mut image.pixels[y * width..(y + 1) * width];
-    while left > 0 && row[left - 1] == from {
-        left -= 1;
-    }
-    while right < width - 1 && row[right + 1] == from {
-        right += 1;
-    }
+        // Fill the extent
+        for val in &mut row[left..=right] {
+            *val = to;
+        }
 
-    // Fill the extent
-    for val in &mut row[left..=right] {
-        *val = to;
-    }
+        if let Some(func) = func {
+            func(user_data, y, left as i32, right as i32);
+        }
 
-    if let Some(func) = func {
-        func(user_data, y, left as i32, right as i32);
-    }
+        // Seed new flood-fills
 
-    // Seed new flood-fills
-
-    if y > 0 {
-        // Not the first row, so fill the previous row
-        let offset = (y - 1) * width;
-        for i in left..=right {
-            // Safety: pixels is in range, as verified by the assert at the beginning.
-            // Unfortunately this is required, as the compiler will add bounds checks that are quite measurable.
-            let val = unsafe { *image.pixels.get_unchecked(offset + i) };
-            if val == from {
-                flood_fill_seed(image, i as i32, y - 1, from, to, func, user_data, depth + 1);
+        if y > 0 {
+            // Not the first row, so fill the previous row
+            let offset = (y - 1) * width;
+            // Two side-by-side pixels do not need two flood fills seeded, since the first flood file will scan to the right and cover the second one.
+            // Keeping track of whether the previous pixel matched lets those unnecessary side-by-side flood fills to be skipped.
+            let mut prev_matched = false;
+            for i in left..=right {
+                // Safety: pixels is in range, as verified by the assert at the beginning.
+                // Unfortunately this is required, as the compiler will add bounds checks that are quite measurable.
+                let val = unsafe { *image.pixels.get_unchecked(offset + i) };
+                if val == from {
+                    if !prev_matched {
+                        flood_from.push((i, y - 1));
+                        prev_matched = true;
+                    }
+                } else {
+                    prev_matched = false;
+                }
             }
         }
-    }
 
-    if y < image.height - 1 {
-        // Not the last row, so fill the next row
-        let offset = (y + 1) * width;
-        for i in left..=right {
-            // Safety: pixels is in range, as verified by the assert at the beginning.
-            // Unfortunately this is required, as the compiler will add bounds checks that are quite measurable.
-            let val = unsafe { *image.pixels.get_unchecked(offset + i) };
-            if val == from {
-                flood_fill_seed(image, i as i32, y + 1, from, to, func, user_data, depth + 1);
+        if y < image.height - 1 {
+            // Not the last row, so fill the next row
+            let offset = (y + 1) * width;
+            let mut prev_matched = false;
+            for i in left..=right {
+                // Safety: pixels is in range, as verified by the assert at the beginning.
+                // Unfortunately this is required, as the compiler will add bounds checks that are quite measurable.
+                let val = unsafe { *image.pixels.get_unchecked(offset + i) };
+                if val == from {
+                    if !prev_matched {
+                        flood_from.push((i, y + 1));
+                        prev_matched = true;
+                    }
+                } else {
+                    prev_matched = false;
+                }
             }
         }
     }
@@ -304,7 +313,6 @@ fn region_code(image: &mut ImageMut<'_>, regions: &mut Vec<Region>, x: i32, y: u
         region as Pixel,
         Some(&area_count),
         &mut UserData::Region(&mut regions[region as usize]),
-        0,
     );
 
     region
@@ -373,7 +381,6 @@ fn find_region_corners(
         1,
         Some(&find_one_corner),
         &mut psd_ref,
-        0,
     );
     let mut psd = psd_ref.into_polygon();
 
@@ -401,7 +408,6 @@ fn find_region_corners(
         rcode,
         Some(&find_other_corners),
         &mut UserData::Polygon(psd),
-        0,
     );
 }
 
@@ -1028,7 +1034,6 @@ fn record_qr_grid(
                         1,
                         None,
                         &mut UserData::None,
-                        0,
                     );
                     flood_fill_seed(
                         image,
@@ -1038,7 +1043,6 @@ fn record_qr_grid(
                         align_region,
                         Some(&find_leftmost_to_line),
                         &mut UserData::Polygon(&mut psd),
-                        0,
                     );
                     qr.align = corners[0];
                 }
