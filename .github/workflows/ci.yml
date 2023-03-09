@@ -69,7 +69,7 @@ jobs:
     steps:
       - uses: actions/checkout@v1
       - name: Install rust
-        run: rustup update beta && rustup default beta
+        run: rustup update stable && rustup default stable
       - name: Install clippy
         run: rustup component add clippy
       - name: clippy

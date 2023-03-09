@@ -13,7 +13,7 @@ fn empty_png() {
 fn empty(ext: &str) {
     let mut q = Quirc::default();
 
-    let empty_image = image::open(&format!("./tests/data/1x1.{}", ext))
+    let empty_image = image::open(format!("./tests/data/1x1.{ext}"))
         .unwrap()
         .into_luma8();
 
@@ -37,7 +37,7 @@ fn two_qr_codes_small_png() {
 
 fn two_qr_codes_small(ext: &str) {
     let mut q = Quirc::default();
-    let image = image::open(&format!("./tests/data/Hello+World.{}", ext))
+    let image = image::open(format!("./tests/data/Hello+World.{ext}"))
         .unwrap()
         .into_luma8();
 
@@ -76,7 +76,7 @@ fn two_qr_codes_large_png() {
 
 fn two_qr_codes_large(ext: &str) {
     let mut q = Quirc::default();
-    let image = image::open(&format!("./tests/data/big_image_with_two_qrcodes.{}", ext))
+    let image = image::open(format!("./tests/data/big_image_with_two_qrcodes.{ext}"))
         .unwrap()
         .into_luma8();
 

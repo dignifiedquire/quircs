@@ -114,7 +114,7 @@ fn poly_eval(s: &[u8], x: u8, gf: &GaloisField) -> u8 {
         if c == 0 {
             continue;
         }
-        sum ^= gf.exp[((gf.log[c as usize] as i32 + log_x as i32 * i) % gf.p) as usize] as u8
+        sum ^= gf.exp[((gf.log[c as usize] as i32 + log_x as i32 * i) % gf.p) as usize]
     }
 
     sum
@@ -140,7 +140,7 @@ fn berlekamp_massey(s: &[u8], n: usize, gf: &GaloisField, sigma: &mut [u8]) {
                 let b = gf.log[s[n - i] as usize] as usize;
                 let index = (a + b) % gf.p as usize;
 
-                d ^= gf.exp[index] as u8;
+                d ^= gf.exp[index];
             }
         }
 
@@ -181,7 +181,7 @@ fn block_syndromes(data: &[u8], bs: i32, npar: usize, s: &mut [u8]) -> i32 {
             if c == 0 {
                 continue;
             }
-            s[i] ^= GF256_EXP[((GF256_LOG[c as usize] as i32 + i as i32 * j) % 255) as usize] as u8;
+            s[i] ^= GF256_EXP[((GF256_LOG[c as usize] as i32 + i as i32 * j) % 255) as usize];
         }
 
         if s[i] != 0 {
@@ -213,7 +213,7 @@ fn eloc_poly(omega: &mut [u8], s: &[u8], sigma: &[u8], npar: usize) {
             }
 
             omega[i + j] ^=
-                GF256_EXP[((log_a as i32 + GF256_LOG[b as usize] as i32) % 255) as usize] as u8;
+                GF256_EXP[((log_a as i32 + GF256_LOG[b as usize] as i32) % 255) as usize];
         }
     }
 }
@@ -250,7 +250,7 @@ fn correct_block(data: &mut [u8], ecc: &RsParams) -> Result<(), DecodeError> {
                 % 255) as usize];
 
             let index = (ecc.bs - i - 1) as usize;
-            data[index] ^= error as u8;
+            data[index] ^= error;
         }
         i += 1
     }
@@ -270,7 +270,7 @@ fn format_syndromes(u: u16, s: &mut [u8]) -> i32 {
         s[i] = 0;
         for j in 0..15 {
             if u as i32 & 1 << j != 0 {
-                s[i] ^= GF16_EXP[((i + 1) * j % 15) as usize] as u8;
+                s[i] ^= GF16_EXP[(i + 1) * j % 15];
             }
         }
 
@@ -457,7 +457,7 @@ fn read_data(code: &Code, data: &mut Data, ds: &mut Datastream) {
 }
 
 fn codestream_ecc(data: &mut Data, mut ds: &mut Datastream) -> Result<(), DecodeError> {
-    let ver = &VERSION_DB[data.version as usize];
+    let ver = &VERSION_DB[data.version];
     let sb_ecc = &ver.ecc[data.ecc_level as usize];
 
     let lb_count = (ver.data_bytes - sb_ecc.bs * sb_ecc.ns) / (sb_ecc.bs + 1);
@@ -567,7 +567,7 @@ fn alpha_tuple(data: &mut Data, ds: &mut Datastream, bits: i32, digits: usize) -
     data.payload.resize(len + digits, 0);
 
     for val in data.payload[len..].iter_mut().rev() {
-        *val = ALPHA_MAP[(tuple % 45) as usize] as u8;
+        *val = ALPHA_MAP[(tuple % 45) as usize];
         tuple /= 45;
     }
 

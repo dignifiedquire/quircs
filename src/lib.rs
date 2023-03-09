@@ -7,7 +7,7 @@
 //! let img = image::open("tests/data/Hello+World.png").expect("failed to open image");
 //!
 //! // convert to gray scale
-//! let img_gray = img.into_luma();
+//! let img_gray = img.into_luma8();
 //!
 //! // create a decoder
 //! let mut decoder = quircs::Quirc::default();

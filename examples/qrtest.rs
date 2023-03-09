@@ -101,7 +101,7 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
     if opts.cell_dump || opts.verbose {
         for code in &res {
             if opts.cell_dump {
-                dump_cells(&code);
+                dump_cells(code);
                 println!();
             }
 
@@ -113,7 +113,7 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
                         println!();
                     }
                     Err(err) => {
-                        println!("  ERROR: {}\n", err);
+                        println!("  ERROR: {err}\n");
                     }
                 }
             }
@@ -121,7 +121,7 @@ fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut Result
     }
 
     info.file_count = 1;
-    return 1;
+    1
 }
 
 fn test_scan(decoder: &mut Quirc, opts: &Opts, path: &str, info: &mut ResultInfo) -> i32 {

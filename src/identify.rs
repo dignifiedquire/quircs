@@ -251,7 +251,7 @@ fn otsu(q: &Quirc, image: &[u8]) -> u8 {
     let mut threshold = 0_u8;
     for (i, val) in histogram.iter().enumerate() {
         // Weighted background
-        q1 = (q1 as u32).wrapping_add(*val) as i32 as i32;
+        q1 = (q1 as u32).wrapping_add(*val) as i32;
         if q1 == 0 {
             continue;
         }
@@ -260,7 +260,7 @@ fn otsu(q: &Quirc, image: &[u8]) -> u8 {
         if q2 == 0 {
             break;
         }
-        sum_b = (sum_b as u32).wrapping_add((i as u32).wrapping_mul(*val)) as i32 as i32;
+        sum_b = (sum_b as u32).wrapping_add((i as u32).wrapping_mul(*val)) as i32;
         let m1 = sum_b as f64 / q1 as f64;
         let m2 = (sum as f64 - sum_b as f64) / q2 as f64;
         let m1m2 = m1 - m2;
@@ -324,7 +324,7 @@ fn find_one_corner(user_data: &mut UserData<'_>, y: usize, left: i32, right: i32
         let dy = y as i32 - psd.ref_0.y;
 
         for x in &xs {
-            let dx = *x - (*psd).ref_0.x;
+            let dx = *x - psd.ref_0.x;
             let d = dx * dx + dy * dy;
             if d > psd.scores[0] {
                 psd.scores[0] = d;
@@ -993,10 +993,10 @@ fn record_qr_grid(
          * lines from capstones A and C.
          */
         if line_intersect(
-            &capstones[a as usize].corners[0],
-            &capstones[a as usize].corners[1],
-            &capstones[c as usize].corners[0],
-            &capstones[c as usize].corners[3],
+            &capstones[a].corners[0],
+            &capstones[a].corners[1],
+            &capstones[c].corners[0],
+            &capstones[c].corners[3],
             &mut qr.align,
         ) != 0
         {
@@ -1145,7 +1145,7 @@ fn test_grouping(
         let mut u = 0.;
         let mut v = 0.;
 
-        if i as usize == j || c2.qr_grid >= 0 {
+        if i == j || c2.qr_grid >= 0 {
             continue;
         }
 
@@ -1154,7 +1154,7 @@ fn test_grouping(
         v = (v - 3.5).abs();
 
         if u < 0.2 * v {
-            let count = hlist.count as usize;
+            let count = hlist.count;
             hlist.count += 1;
             let n = &mut hlist.n[count];
             n.index = j as i32;
@@ -1162,7 +1162,7 @@ fn test_grouping(
         }
 
         if v < 0.2 * u {
-            let count = vlist.count as usize;
+            let count = vlist.count;
             vlist.count += 1;
             let n = &mut vlist.n[count];
             n.index = j as i32;
