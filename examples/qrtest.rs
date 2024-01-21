@@ -50,7 +50,7 @@ fn print_result(name: &str, info: &mut ResultInfo) {
     }
 }
 
-fn add_result(mut sum: &mut ResultInfo, inf: &mut ResultInfo) {
+fn add_result(sum: &mut ResultInfo, inf: &mut ResultInfo) {
     sum.file_count += inf.file_count;
     sum.id_count += inf.id_count;
     sum.decode_count += inf.decode_count;
@@ -59,7 +59,7 @@ fn add_result(mut sum: &mut ResultInfo, inf: &mut ResultInfo) {
     sum.total_time = sum.total_time.wrapping_add(inf.total_time);
 }
 
-fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, mut info: &mut ResultInfo) -> i32 {
+fn scan_file(decoder: &mut Quirc, opts: &Opts, path: &str, info: &mut ResultInfo) -> i32 {
     let path = PathBuf::from(path);
     let start = Instant::now();
     let total_start = start;
