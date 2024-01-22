@@ -420,7 +420,7 @@ fn reserved_cell(version: usize, i: i32, j: i32) -> i32 {
     0
 }
 
-fn read_bit(code: &Code, data: &mut Data, mut ds: &mut Datastream, i: i32, j: i32) {
+fn read_bit(code: &Code, data: &mut Data, ds: &mut Datastream, i: i32, j: i32) {
     let bitpos: i32 = ds.data_bits & 7;
     let bytepos: i32 = ds.data_bits >> 3;
     let mut v: i32 = grid_bit(code, j, i);
@@ -456,7 +456,7 @@ fn read_data(code: &Code, data: &mut Data, ds: &mut Datastream) {
     }
 }
 
-fn codestream_ecc(data: &mut Data, mut ds: &mut Datastream) -> Result<(), DecodeError> {
+fn codestream_ecc(data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeError> {
     let ver = &VERSION_DB[data.version];
     let sb_ecc = &ver.ecc[data.ecc_level as usize];
 
@@ -493,7 +493,7 @@ fn bits_remaining(ds: &Datastream) -> i32 {
     ds.data_bits - ds.ptr
 }
 
-fn take_bits(mut ds: &mut Datastream, mut len: i32) -> i32 {
+fn take_bits(ds: &mut Datastream, mut len: i32) -> i32 {
     let mut ret: i32 = 0;
     while len != 0 && ds.ptr < ds.data_bits {
         let b: u8 = ds.data[(ds.ptr >> 3) as usize];
@@ -651,7 +651,7 @@ fn decode_kanji(data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeError>
     Ok(())
 }
 
-fn decode_eci(mut data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeError> {
+fn decode_eci(data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeError> {
     if bits_remaining(ds) < 8 {
         return Err(DecodeError::DataUnderflow);
     }
@@ -675,7 +675,7 @@ fn decode_eci(mut data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeErro
     Ok(())
 }
 
-fn decode_payload(mut data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeError> {
+fn decode_payload(data: &mut Data, ds: &mut Datastream) -> Result<(), DecodeError> {
     while bits_remaining(ds) >= 4 {
         let type_0 = DataType::from_i32(take_bits(ds, 4));
         match type_0 {

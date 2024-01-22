@@ -382,7 +382,7 @@ fn find_region_corners(
         Some(&find_one_corner),
         &mut psd_ref,
     );
-    let mut psd = psd_ref.into_polygon();
+    let psd = psd_ref.into_polygon();
 
     // Safe to unwrap, because the only reference was given to the call
     // to flood_fill_seed above.
@@ -980,7 +980,7 @@ fn record_qr_grid(
      * to the grid.
      */
     for cap_index in &qr.caps {
-        let mut cap = &mut capstones[*cap_index];
+        let cap = &mut capstones[*cap_index];
         rotate_capstone(cap, &h0, &hd);
         cap.qr_grid = qr_index as i32;
     }
