@@ -140,6 +140,7 @@ fn generated_png() {
                 }
 
                 // Known failures, same on node-quirc
+                #[allow(clippy::nonminimal_bool)]
                 if version == 23 && *ecc_level == EccLevel::Q && *mode == DataType::Numeric
                     || version == 23 && *ecc_level == EccLevel::Q && *mode == DataType::Numeric
                     || version == 23 && *ecc_level == EccLevel::Q && *mode == DataType::Kanji

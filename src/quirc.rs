@@ -179,6 +179,7 @@ pub enum EccLevel {
     Q = 3,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for EccLevel {
     fn default() -> Self {
         EccLevel::M
