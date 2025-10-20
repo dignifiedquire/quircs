@@ -9,6 +9,7 @@ homepage = "https://github.com/dignifiedquire/quircs"
 description = "QR code detection and scanning. Pure Rust."
 readme = "README.md"
 edition = "2018"
+rust-version = "1.68"
 
 keywords = ["qr", "scanner"]
 categories = ["encoding", "multimedia"]
@@ -20,9 +21,7 @@ crate-type = ["staticlib", "rlib"]
 [dependencies]
 num-derive = "0.4.0"
 num-traits = "0.2.11"
-thiserror = "1.0.19"
+thiserror = "2.0"
 
 [dev-dependencies]
-image = "0.24"
-
-
+image = "0.25"
