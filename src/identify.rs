@@ -558,7 +558,13 @@ fn find_alignment_pattern(
     perspective_map(&c0.c, u, v + 1.0f64, &mut a);
     perspective_unmap(&c2.c, &b, &mut u, &mut v);
     perspective_map(&c2.c, u + 1.0f64, v, &mut c);
-    let size_estimate = ((a.x - b.x) * -(c.y - b.y) + (a.y - b.y) * (c.x - b.x)).abs();
+    // Widen to i64 before subtracting/multiplying: on degenerate capstone
+    // geometry the extrapolated corner points can be far enough apart that
+    // this arithmetic overflows i32 (found by fuzzing, both the
+    // subtraction here and the `* 100` below have independently crashed).
+    let size_estimate = ((a.x as i64 - b.x as i64) * -(c.y as i64 - b.y as i64)
+        + (a.y as i64 - b.y as i64) * (c.x as i64 - b.x as i64))
+        .abs();
 
     /* Spiral outwards from the estimate point until we find something
      * roughly the right size. Don't look too far from the estimate
@@ -567,12 +573,22 @@ fn find_alignment_pattern(
     static DX_MAP: [i32; 4] = [1, 0, -1, 0];
     static DY_MAP: [i32; 4] = [0, -1, 0, 1];
 
-    while step_size * step_size < size_estimate * 100 {
+    // On degenerate capstone geometry `size_estimate` can be enormous (not
+    // just overflow-inducing, but legitimately huge once computed in i64),
+    // which without a cap makes this loop spiral for a practically
+    // unbounded number of iterations -- a hang, not a crash, and arguably
+    // worse. An alignment pattern can't be further from the estimate point
+    // than the image itself, so cap the spiral radius there (doubled for
+    // slack); real inputs never get close to this bound in practice.
+    let max_step = (image.width.max(image.height) as i64) * 2;
+    while (step_size as i64) * (step_size as i64) < size_estimate * 100
+        && (step_size as i64) < max_step
+    {
         for _ in 0..step_size {
             let code = region_code(image, regions, b.x, b.y as usize);
             if code >= 0 {
                 let reg = &regions[code as usize];
-                if reg.count >= size_estimate / 2 && reg.count <= size_estimate * 2 {
+                if reg.count as i64 >= size_estimate / 2 && reg.count as i64 <= size_estimate * 2 {
                     qr.align_region = Some(code as Pixel);
                     return;
                 }
