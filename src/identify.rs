@@ -558,7 +558,13 @@ fn find_alignment_pattern(
     perspective_map(&c0.c, u, v + 1.0f64, &mut a);
     perspective_unmap(&c2.c, &b, &mut u, &mut v);
     perspective_map(&c2.c, u + 1.0f64, v, &mut c);
-    let size_estimate = ((a.x - b.x) * -(c.y - b.y) + (a.y - b.y) * (c.x - b.x)).abs();
+    // Widen to i64 before subtracting/multiplying: on degenerate capstone
+    // geometry the extrapolated corner points can be far enough apart that
+    // this arithmetic overflows i32 (found by fuzzing, both the
+    // subtraction here and the `* 100` below have independently crashed).
+    let size_estimate = ((a.x as i64 - b.x as i64) * -(c.y as i64 - b.y as i64)
+        + (a.y as i64 - b.y as i64) * (c.x as i64 - b.x as i64))
+        .abs();
 
     /* Spiral outwards from the estimate point until we find something
      * roughly the right size. Don't look too far from the estimate
@@ -567,17 +573,13 @@ fn find_alignment_pattern(
     static DX_MAP: [i32; 4] = [1, 0, -1, 0];
     static DY_MAP: [i32; 4] = [0, -1, 0, 1];
 
-    // `size_estimate` is derived from perspective-mapped corner points that
-    // can be extrapolated far outside the image bounds on degenerate
-    // capstone geometry, so `size_estimate * 100` can overflow `i32`.
-    // Compare in `i64` instead -- `size_estimate` is already bounded by
-    // `i32::MAX`, so `size_estimate as i64 * 100` always fits comfortably.
-    while (step_size as i64) * (step_size as i64) < (size_estimate as i64) * 100 {
+    // `size_estimate` is already `i64` (see above), so this can't overflow.
+    while (step_size as i64) * (step_size as i64) < size_estimate * 100 {
         for _ in 0..step_size {
             let code = region_code(image, regions, b.x, b.y as usize);
             if code >= 0 {
                 let reg = &regions[code as usize];
-                if reg.count >= size_estimate / 2 && reg.count <= size_estimate * 2 {
+                if reg.count as i64 >= size_estimate / 2 && reg.count as i64 <= size_estimate * 2 {
                     qr.align_region = Some(code as Pixel);
                     return;
                 }
