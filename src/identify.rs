@@ -567,7 +567,12 @@ fn find_alignment_pattern(
     static DX_MAP: [i32; 4] = [1, 0, -1, 0];
     static DY_MAP: [i32; 4] = [0, -1, 0, 1];
 
-    while step_size * step_size < size_estimate * 100 {
+    // `size_estimate` is derived from perspective-mapped corner points that
+    // can be extrapolated far outside the image bounds on degenerate
+    // capstone geometry, so `size_estimate * 100` can overflow `i32`.
+    // Compare in `i64` instead -- `size_estimate` is already bounded by
+    // `i32::MAX`, so `size_estimate as i64 * 100` always fits comfortably.
+    while (step_size as i64) * (step_size as i64) < (size_estimate as i64) * 100 {
         for _ in 0..step_size {
             let code = region_code(image, regions, b.x, b.y as usize);
             if code >= 0 {

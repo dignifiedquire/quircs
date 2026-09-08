@@ -104,6 +104,30 @@ fn two_qr_codes_large(ext: &str) {
 }
 
 #[test]
+fn regression_overflow_find_alignment_pattern() {
+    // Regression test for an `attempt to multiply with overflow` panic in
+    // `find_alignment_pattern` (src/identify.rs, `size_estimate * 100`),
+    // found by fuzzing `Quirc::identify` with arbitrary pixel data. On
+    // sufficiently degenerate capstone geometry the extrapolated corner
+    // points make `size_estimate` large enough that multiplying it by 100
+    // overflows `i32`.
+    //
+    // The data file is the exact byte-for-byte input libFuzzer found;
+    // width/height/pixel-buffer are derived from it the same way the fuzz
+    // harness did (first 2 bytes -> width, next 2 -> height, mod 512+1
+    // each, remaining bytes cycled to fill the buffer).
+    let data = include_bytes!("data/fuzz_overflow_find_alignment_pattern.bin");
+    let w = (u16::from_le_bytes([data[0], data[1]]) as usize % 512) + 1;
+    let h = (u16::from_le_bytes([data[2], data[3]]) as usize % 512) + 1;
+    let needed = w * h;
+    let buf: Vec<u8> = data[4..].iter().cycle().take(needed).copied().collect();
+
+    let mut q = Quirc::default();
+    // Must not panic.
+    let _: Vec<_> = q.identify(w, h, &buf).collect();
+}
+
+#[test]
 fn generated_png() {
     use quircs::{DataType, EccLevel};
     use std::collections::HashMap;
