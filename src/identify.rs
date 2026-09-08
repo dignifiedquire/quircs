@@ -573,8 +573,17 @@ fn find_alignment_pattern(
     static DX_MAP: [i32; 4] = [1, 0, -1, 0];
     static DY_MAP: [i32; 4] = [0, -1, 0, 1];
 
-    // `size_estimate` is already `i64` (see above), so this can't overflow.
-    while (step_size as i64) * (step_size as i64) < size_estimate * 100 {
+    // On degenerate capstone geometry `size_estimate` can be enormous (not
+    // just overflow-inducing, but legitimately huge once computed in i64),
+    // which without a cap makes this loop spiral for a practically
+    // unbounded number of iterations -- a hang, not a crash, and arguably
+    // worse. An alignment pattern can't be further from the estimate point
+    // than the image itself, so cap the spiral radius there (doubled for
+    // slack); real inputs never get close to this bound in practice.
+    let max_step = (image.width.max(image.height) as i64) * 2;
+    while (step_size as i64) * (step_size as i64) < size_estimate * 100
+        && (step_size as i64) < max_step
+    {
         for _ in 0..step_size {
             let code = region_code(image, regions, b.x, b.y as usize);
             if code >= 0 {
